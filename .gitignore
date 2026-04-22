@@ -1,0 +1,61 @@
+# Ignore generated artifacts, local environments, and editor-specific files.
+# OS / Editor
+.DS_Store
+Thumbs.db
+.idea/
+
+# VS Code workspace settings (local only)
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.python-version
+
+# Python tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+.hypothesis/
+
+# Packaging / virtualenvs
+.eggs/
+*.egg-info/
+pip-wheel-metadata/
+build/
+dist/
+.venv/
+venv/
+ENV/
+env/
+
+# Test / coverage / logs
+.coverage
+.coverage.*
+htmlcov/
+*.log
+
+# Runtime artifact folders (large, generated)
+backend/jobs/*
+!backend/jobs/.gitkeep
+backend/data/*
+
+# Verilator and C++ build artifacts
+**/obj_dir/
+*.d
+*.o
+*.a
+*.out

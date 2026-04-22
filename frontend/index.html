@@ -1,0 +1,777 @@
+<!--
+  HDLFACTORY single-page UI.
+  - Create Job tab submits prompt + benchmark to backend.
+  - Job History tab shows past runs and expandable logs.
+  - System status panel reflects queue/model/processor health.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>HDLFACTORY – UMBC</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <style>
+    /* Theme tokens used across cards, buttons, and status colors. */
+    :root {
+      --bg: #0a0a0a;
+      --bg-2: #111111;
+      --panel: #151515;
+      --panel-2: #1c1c1c;
+      --border: #2c2c2c;
+      --text: #f5f5f5;
+      --muted: #b7b7b7;
+      --accent: #ffb81c;
+      --success: #2ecc71;
+      --error: #ff5f6d;
+      --shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+      --radius: 18px;
+    }
+
+    /* Global reset for predictable sizing. */
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(255, 184, 28, 0.10), transparent 24%),
+        radial-gradient(circle at top right, rgba(255, 184, 28, 0.07), transparent 18%),
+        linear-gradient(180deg, var(--bg-2), var(--bg));
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 36px 20px 60px;
+    }
+
+    /* Branded header block with subtle glow treatment. */
+    .topbar {
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 20px;
+      margin-bottom: 28px;
+      padding: 18px 22px;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      background: rgba(255, 255, 255, 0.03);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(10px);
+    }
+
+    .topbar::before {
+      content: "";
+      position: absolute;
+      inset: -20% auto auto -10%;
+      width: 320px;
+      height: 320px;
+      background: radial-gradient(circle, rgba(255,184,28,0.14), transparent 65%);
+      pointer-events: none;
+    }
+
+    .brand {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      z-index: 1;
+    }
+
+    .brand img {
+      width: 58px;
+      height: 58px;
+      object-fit: contain;
+      border-radius: 14px;
+      background: rgba(255,255,255,0.04);
+      padding: 6px;
+      border: 1px solid rgba(255,184,28,0.18);
+    }
+
+    .brand-text {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .brand-title {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+
+    .brand-subtitle {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .topbar-badge {
+      position: relative;
+      z-index: 1;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(255, 184, 28, 0.15);
+      color: #ffb81c;
+      border: 1px solid rgba(255,184,28,0.25);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .hero {
+      margin-bottom: 22px;
+    }
+
+    .eyebrow {
+      display: inline-block;
+      padding: 6px 10px;
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--accent);
+      background: rgba(255, 184, 28, 0.10);
+      border: 1px solid rgba(255, 184, 28, 0.20);
+      border-radius: 999px;
+      margin-bottom: 14px;
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: 42px;
+      line-height: 1.05;
+      letter-spacing: -0.03em;
+    }
+
+    .subtitle {
+      margin: 0;
+      color: var(--muted);
+      font-size: 17px;
+      line-height: 1.6;
+      max-width: 760px;
+    }
+
+    /* Generic card shell reused for status, form, and history sections. */
+    .card {
+      background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 24px;
+      backdrop-filter: blur(10px);
+      margin-bottom: 20px;
+    }
+
+    .helper-row {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      font-size: 14px;
+      color: var(--muted);
+    }
+
+    .helper-pill {
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: #1c1c1c;
+    }
+
+    .nav-tabs {
+      display: flex;
+      gap: 10px;
+      margin: 0 0 24px;
+      flex-wrap: wrap;
+    }
+
+    /* Pill-style navigation between app views. */
+    .nav-tab {
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.04);
+      color: var(--text);
+      border-radius: 999px;
+      padding: 10px 16px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .nav-tab:hover {
+      background: rgba(255,255,255,0.08);
+    }
+
+    .nav-tab.active {
+      background: linear-gradient(135deg, #ffb81c, #e0a000);
+      color: black;
+      border-color: transparent;
+    }
+
+    .page {
+      display: none;
+    }
+
+    .page.active {
+      display: block;
+    }
+
+    .section-title {
+      margin: 0 0 8px;
+      font-size: 20px;
+      font-weight: 700;
+    }
+
+    .section-copy {
+      margin: 0 0 18px;
+      color: var(--muted);
+      line-height: 1.5;
+      font-size: 14px;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    textarea,
+    input[type="file"] {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: var(--panel-2);
+      color: var(--text);
+      padding: 14px 16px;
+      font-size: 15px;
+      outline: none;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    textarea {
+      min-height: 150px;
+      resize: vertical;
+      line-height: 1.5;
+    }
+
+    textarea:focus,
+    input[type="file"]:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 4px rgba(255, 184, 28, 0.14);
+    }
+
+    .field {
+      margin-bottom: 18px;
+    }
+
+    .actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }
+
+    button,
+    .button-link {
+      border: 0;
+      border-radius: 14px;
+      background: linear-gradient(135deg, #ffb81c, #e0a000);
+      color: black;
+      font-size: 15px;
+      font-weight: 800;
+      padding: 14px 20px;
+      cursor: pointer;
+      transition: transform 0.15s ease, box-shadow 0.2s ease, opacity 0.2s ease, filter 0.2s ease;
+      box-shadow: 0 12px 28px rgba(255, 184, 28, 0.28);
+      text-decoration: none;
+      display: inline-block;
+    }
+
+    button:hover,
+    .button-link:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 16px 32px rgba(255, 184, 28, 0.34);
+      filter: brightness(1.02);
+    }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+
+    .secondary-btn {
+      background: rgba(255,255,255,0.04);
+      color: var(--text);
+      border: 1px solid var(--border);
+      box-shadow: none;
+    }
+
+    .secondary-btn:hover {
+      background: rgba(255,255,255,0.07);
+      box-shadow: none;
+    }
+
+    .helper {
+      font-size: 13px;
+      color: var(--muted);
+      margin-top: 8px;
+    }
+
+    .status {
+      font-weight: 800;
+      margin-bottom: 10px;
+      font-size: 18px;
+    }
+
+    .success {
+      color: var(--success);
+    }
+
+    .fail {
+      color: var(--error);
+    }
+
+    /* Monospace container for simulator stdout/stderr output. */
+    .log {
+      background: #000;
+      padding: 12px;
+      border-radius: 10px;
+      margin-top: 10px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      white-space: pre-wrap;
+      overflow-x: auto;
+      border: 1px solid var(--border);
+    }
+
+    .progress-box {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-top: 12px;
+      padding: 14px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: rgba(255,255,255,0.03);
+    }
+
+    /* Lightweight loading affordance used during submit/poll phases. */
+    .spinner {
+      width: 24px;
+      height: 24px;
+      border: 3px solid rgba(255,255,255,0.15);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.9s linear infinite;
+      flex: 0 0 auto;
+    }
+
+    .progress-text {
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .history-list {
+      display: grid;
+      gap: 14px;
+      margin-top: 18px;
+    }
+
+    .job {
+      border: 1px solid var(--border);
+      padding: 14px;
+      border-radius: 12px;
+      background: rgba(255,255,255,0.02);
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Mobile layout adjustments for narrow viewports. */
+    @media (max-width: 720px) {
+      .topbar {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      h1 {
+        font-size: 32px;
+      }
+
+      .card {
+        padding: 18px;
+      }
+
+      button,
+      .button-link {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- App container -->
+  <div class="container">
+    <!-- Brand and capability banner -->
+    <div class="topbar">
+      <div class="brand">
+        <img src="umbc.png" alt="UMBC logo" />
+        <div class="brand-text">
+          <p class="brand-title">HDLFACTORY</p>
+          <p class="brand-subtitle">University of Maryland, Baltimore County</p>
+        </div>
+      </div>
+      <div class="topbar-badge">GPU-accelerated validation</div>
+    </div>
+
+    <!-- Product overview copy -->
+    <div class="hero">
+      <div class="eyebrow">AI-assisted HDL generation</div>
+      <h1>Generate, validate, and download Verilog</h1>
+      <p class="subtitle">
+        HDLFACTORY uses Mistral-7B to generate Verilog from natural language, validates the output with Verilator,
+        and returns a downloadable design when the benchmark passes.
+      </p>
+    </div>
+
+    <!-- Live system health panel (polling) -->
+    <div class="card">
+      <div id="systemStatus" class="helper">Loading system status...</div>
+    </div>
+
+    <!-- Top-level page navigation -->
+    <div class="nav-tabs">
+      <button class="nav-tab active" onclick="showPage('createPage', this)">Create Job</button>
+      <button class="nav-tab" onclick="showPage('historyPage', this); loadHistory();">Job History</button>
+    </div>
+
+    <!-- Create Job page -->
+    <div id="createPage" class="page active">
+      <div class="card">
+        <h2 class="section-title">Create a job</h2>
+        <p class="section-copy">
+          Submit a hardware design prompt and upload a benchmark testbench to evaluate the generated Verilog automatically.
+        </p>
+
+        <div class="field">
+          <label for="prompt">Prompt</label>
+          <textarea id="prompt" placeholder="Example: Create a synthesizable Verilog module for a 2 input AND gate named and_gate with inputs a, b and output y."></textarea>
+        </div>
+
+        <div class="field">
+          <label for="benchmark">Benchmark testbench</label>
+          <input type="file" id="benchmark" accept=".v,.sv,.txt" />
+          <div id="fileName" class="helper">No file selected</div>
+        </div>
+
+        <div class="actions">
+          <button id="submitBtn" onclick="submitJob()">Generate and Validate</button>
+          <button class="secondary-btn" type="button" onclick="clearForm()">Clear / Reset</button>
+        </div>
+
+        <div id="result" style="margin-top:20px;"></div>
+      </div>
+    </div>
+
+    <!-- Job History page -->
+    <div id="historyPage" class="page">
+      <div class="card">
+        <div class="actions" style="margin-top:0; margin-bottom:10px;">
+          <h2 class="section-title" style="margin:0;">Job History</h2>
+          <button class="secondary-btn" type="button" onclick="loadHistory()">Refresh</button>
+        </div>
+        <p class="section-copy">
+          Review recent HDLFACTORY runs, inspect summaries, and download generated Verilog from successful jobs.
+        </p>
+        <div id="historyList" class="history-list">
+          <div class="helper">No jobs loaded yet.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Nginx routes /api/* to FastAPI; keeping this in one constant eases deploy changes.
+    const API_BASE = "/api";
+    // Interval handle for the active status poll loop.
+    let pollInterval = null;
+
+    document.addEventListener("DOMContentLoaded", () => {
+      const benchmarkInput = document.getElementById("benchmark");
+      const fileName = document.getElementById("fileName");
+
+      benchmarkInput.addEventListener("change", () => {
+        if (benchmarkInput.files.length > 0) {
+          fileName.textContent = `Selected file: ${benchmarkInput.files[0].name}`;
+        } else {
+          fileName.textContent = "No file selected";
+        }
+      });
+
+      loadSystemStatus();
+      // Keep health badges fresh even when no jobs are running.
+      setInterval(loadSystemStatus, 5000);
+      loadHistory();
+    });
+
+    /**
+    * Switch visible SPA tab and active nav pill.
+    * @param {string} pageId - ID of the page container to activate.
+    * @param {HTMLButtonElement} clickedButton - Nav button to mark active.
+     */
+    function showPage(pageId, clickedButton) {
+      document.querySelectorAll(".page").forEach(page => page.classList.remove("active"));
+      document.getElementById(pageId).classList.add("active");
+
+      document.querySelectorAll(".nav-tab").forEach(tab => tab.classList.remove("active"));
+      clickedButton.classList.add("active");
+    }
+
+    /**
+    * Reset submission form state and clear result output.
+     */
+    function clearForm() {
+      document.getElementById("prompt").value = "";
+      document.getElementById("benchmark").value = "";
+      document.getElementById("fileName").textContent = "No file selected";
+      document.getElementById("result").innerHTML = "";
+    }
+
+    /**
+    * Fetch and render backend/worker/model health snapshot.
+     */
+    async function loadSystemStatus() {
+      try {
+        const r = await fetch(`${API_BASE}/system-status`);
+        const data = await r.json();
+
+        document.getElementById("systemStatus").innerHTML = `
+          <div class="helper-row">
+            <div class="helper-pill"><strong>GPU:</strong> ${escapeHtml(data.gpu)}</div>
+            <div class="helper-pill"><strong>Model:</strong> ${escapeHtml(data.model)}</div>
+            <div class="helper-pill"><strong>Processor:</strong> ${escapeHtml(data.processor)}</div>
+            <div class="helper-pill"><strong>Worker:</strong> ${escapeHtml(data.worker)}</div>
+            <div class="helper-pill"><strong>Queue:</strong> ${escapeHtml(String(data.queue_depth))}</div>
+          </div>
+        `;
+      } catch (err) {
+        document.getElementById("systemStatus").innerHTML =
+          `<div class="fail">Failed to load system status</div>`;
+      }
+    }
+
+    /**
+    * Submit a generation request, then begin job-status polling.
+     */
+    async function submitJob() {
+      const prompt = document.getElementById("prompt").value.trim();
+      const file = document.getElementById("benchmark").files[0];
+      const result = document.getElementById("result");
+      const submitBtn = document.getElementById("submitBtn");
+
+      if (!prompt || !file) {
+        alert("Prompt and benchmark required");
+        return;
+      }
+
+      // Backend expects a multipart payload with these exact field names.
+      const form = new FormData();
+      form.append("prompt", prompt);
+      form.append("benchmark_file", file);
+
+      result.innerHTML = `
+        <div class="progress-box">
+          <div class="spinner"></div>
+          <div class="progress-text">Submitting job...</div>
+        </div>
+      `;
+      submitBtn.disabled = true;
+
+      try {
+        const response = await fetch(`${API_BASE}/generate`, {
+          method: "POST",
+          body: form
+        });
+
+        const data = await response.json();
+
+        result.innerHTML = `
+          <div class="progress-box">
+            <div class="spinner"></div>
+            <div>
+              <div class="progress-text">Job queued...</div>
+              <div class="helper">Job ID: ${escapeHtml(data.job_id)}</div>
+            </div>
+          </div>
+        `;
+
+        startPolling(data.job_id);
+        loadSystemStatus();
+      } catch (err) {
+        result.innerHTML = `<div class="fail">Failed to submit job: ${escapeHtml(err.message)}</div>`;
+        submitBtn.disabled = false;
+      }
+    }
+
+    /**
+    * Poll status endpoint until the job reaches a terminal state.
+    * @param {string} jobId - UUID returned by the generate endpoint.
+     */
+    function startPolling(jobId) {
+      if (pollInterval) clearInterval(pollInterval);
+
+      pollInterval = setInterval(async () => {
+        try {
+          const r = await fetch(`${API_BASE}/status/${jobId}`);
+          const data = await r.json();
+
+          renderProgress(jobId, data);
+          loadSystemStatus();
+
+          if (data.status === "completed" || data.status === "failed") {
+            clearInterval(pollInterval);
+            renderFinalResult(data);
+            loadHistory();
+            loadSystemStatus();
+            document.getElementById("submitBtn").disabled = false;
+          }
+        } catch (err) {
+          clearInterval(pollInterval);
+          document.getElementById("result").innerHTML =
+            `<div class="fail">Polling failed: ${escapeHtml(err.message)}</div>`;
+          document.getElementById("submitBtn").disabled = false;
+        }
+      }, 2000);
+    }
+
+    /**
+    * Render in-progress card while generation/validation is running.
+    * @param {string} jobId - Active job identifier.
+    * @param {object} data - Status payload from /status/{job_id}.
+     */
+    function renderProgress(jobId, data) {
+      document.getElementById("result").innerHTML = `
+        <div class="progress-box">
+          <div class="spinner"></div>
+          <div>
+            <div class="progress-text">${escapeHtml(data.summary || "Processing job...")}</div>
+            <div class="helper">Job ID: ${escapeHtml(jobId)}</div>
+            <div class="helper">Current status: ${escapeHtml(String(data.status || ""))}</div>
+          </div>
+        </div>
+      `;
+    }
+
+    /**
+    * Render terminal result card including download/log actions.
+    * @param {object} data - Final status payload.
+     */
+    function renderFinalResult(data) {
+      const result = document.getElementById("result");
+      const statusClass = data.success ? "success" : "fail";
+
+      let html = `
+        <div class="status ${statusClass}">
+          ${data.success ? "TEST PASSED" : "TEST FAILED"}
+        </div>
+        <div>${escapeHtml(data.summary || "")}</div>
+      `;
+
+      if (data.download_url) {
+        html += `<br><br><a class="button-link" href="${API_BASE}${data.download_url}">Download Verilog</a>`;
+      }
+
+      html += `<br><br><button onclick="loadLogs('${data.job_id}')">View Logs</button>`;
+      html += `<div id="logs"></div>`;
+
+      result.innerHTML = html;
+    }
+
+    /**
+    * Load and display logs for the latest submitted job card.
+    * @param {string} jobId - Job UUID.
+     */
+    async function loadLogs(jobId) {
+      const r = await fetch(`${API_BASE}/logs/${jobId}`);
+      const data = await r.json();
+
+      document.getElementById("logs").innerHTML = `
+        <div class="log"><strong>STDOUT</strong>\n\n${escapeHtml(data.stdout || "")}</div>
+        <div class="log"><strong>STDERR</strong>\n\n${escapeHtml(data.stderr || "")}</div>
+      `;
+    }
+
+    /**
+    * Refresh and render job history list.
+     */
+    async function loadHistory() {
+      const r = await fetch(`${API_BASE}/history`);
+      const data = await r.json();
+
+      const list = document.getElementById("historyList");
+
+      if (!data.jobs.length) {
+        list.innerHTML = `<div class="helper">No jobs yet.</div>`;
+        return;
+      }
+
+      list.innerHTML = data.jobs.map(j => `
+        <div class="job">
+          <div><b>${escapeHtml(j.job_id)}</b></div>
+          <div class="${j.success === true ? 'success' : (j.success === false ? 'fail' : '')}">
+            ${escapeHtml(String(j.status).toUpperCase())}
+          </div>
+          <div>${escapeHtml(j.summary || "")}</div>
+          <div class="helper">${escapeHtml(j.created_at || "")}</div>
+          ${j.download_url ? `<a class="button-link" href="${API_BASE}${j.download_url}">Download</a>` : ""}
+          <button class="secondary-btn" onclick="loadHistoryLogs('${j.job_id}', this)">Logs</button>
+          <div class="historyLogs"></div>
+        </div>
+      `).join("");
+    }
+
+    /**
+    * Expand logs inline for one history row.
+    * @param {string} jobId - Job UUID.
+    * @param {HTMLButtonElement} button - Row button used to find target container.
+     */
+    async function loadHistoryLogs(jobId, button) {
+      const container = button.parentElement.querySelector(".historyLogs");
+      const r = await fetch(`${API_BASE}/logs/${jobId}`);
+      const data = await r.json();
+
+      container.innerHTML = `
+        <div class="log"><strong>STDOUT</strong>\n\n${escapeHtml(data.stdout || "")}</div>
+        <div class="log"><strong>STDERR</strong>\n\n${escapeHtml(data.stderr || "")}</div>
+      `;
+    }
+
+    /**
+    * Escape text before template-string insertion to prevent HTML injection.
+    * @param {unknown} str - Value to sanitize for HTML context.
+    * @returns {string} Escaped string safe for innerHTML interpolation.
+     */
+    function escapeHtml(str) {
+      return String(str)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+  </script>
+</body>
+</html>

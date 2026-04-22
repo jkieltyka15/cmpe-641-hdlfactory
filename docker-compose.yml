@@ -1,0 +1,92 @@
+# HDLFACTORY local development stack.
+# Brings up frontend, backend API, worker, Redis queue, and Ollama model runtime.
+services:
+  # Redis backs the job queue between API and worker.
+  redis:
+    image: redis:7-alpine
+    container_name: hdlfactory-redis
+    restart: unless-stopped
+
+  # Ollama serves the configured LLM over HTTP for generation requests.
+  ollama:
+    image: ollama/ollama
+    container_name: hdlfactory-ollama
+    volumes:
+      - ollama_models:/root/.ollama
+    devices:
+      - /dev/dri:/dev/dri
+    environment:
+      - OLLAMA_VULKAN=1
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+
+  # One-time initialization job to pre-pull the required model.
+  ollama-init:
+    image: curlimages/curl:8.12.1
+    container_name: hdlfactory-ollama-init
+    depends_on:
+      ollama:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command: |
+      set -e
+      echo "Waiting for Ollama..."
+      curl -fsS http://ollama:11434/api/tags >/dev/null
+      echo "Pulling mistral:7b..."
+      curl -fsS -X POST http://ollama:11434/api/pull \
+        -H 'Content-Type: application/json' \
+        -d '{"name":"mistral:7b","stream":false}'
+      echo "Model pull complete."
+    restart: "no"
+
+  # FastAPI service that accepts jobs and exposes status/history APIs.
+  backend:
+    build: ./backend
+    container_name: hdlfactory-backend
+    depends_on:
+      redis:
+        condition: service_started
+      ollama:
+        condition: service_healthy
+      ollama-init:
+        condition: service_completed_successfully
+    volumes:
+      - ./backend/jobs:/app/jobs
+      - ./backend/data:/app/data
+    restart: unless-stopped
+
+  # Background processor that dequeues and validates generated Verilog.
+  worker:
+    build: ./worker
+    container_name: hdlfactory-worker
+    depends_on:
+      redis:
+        condition: service_started
+      ollama:
+        condition: service_healthy
+      ollama-init:
+        condition: service_completed_successfully
+    volumes:
+      - ./backend/jobs:/app/jobs
+      - ./backend/data:/app/data
+    restart: unless-stopped
+
+  # Static frontend served by nginx.
+  frontend:
+    build: ./frontend
+    container_name: hdlfactory-frontend
+    depends_on:
+      backend:
+        condition: service_started
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+
+volumes:
+  # Persisted Ollama model cache across container restarts.
+  ollama_models:

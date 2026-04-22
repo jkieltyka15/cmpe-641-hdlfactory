@@ -1,0 +1,6 @@
+# Python dependencies for the backend FastAPI service.
+fastapi
+uvicorn
+python-multipart
+redis
+requests
