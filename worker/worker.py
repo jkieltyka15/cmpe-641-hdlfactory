@@ -5,6 +5,7 @@ with Verilator, then persists status/log artifacts for API retrieval.
 """
 
 import json
+import os
 import re
 import sqlite3
 import subprocess
@@ -26,6 +27,17 @@ DB_PATH = DATA_DIR / "jobs.db"
 
 # Redis list `hdl_jobs` contains serialized job payloads from backend.
 redis_client = redis.Redis(host="redis", port=6379, decode_responses=True)
+
+
+def available_threads() -> int:
+    """Return the CPU count visible to the current process."""
+    try:
+        return len(os.sched_getaffinity(0))
+    except (AttributeError, OSError):
+        return os.cpu_count() or 1
+
+
+MAX_THREADS = max(1, available_threads())
 
 
 def clean_verilog(text: str) -> str:
@@ -158,7 +170,7 @@ def run_benchmark(job_dir: Path, source_file: str = "generated.v"):
     cmd = [
         "bash",
         "-lc",
-        f"cd {job_dir} && verilator --binary --top-module benchmark_tb {source_file} benchmark_tb.v && ./obj_dir/Vbenchmark_tb",
+        f"cd {job_dir} && verilator --binary --threads {MAX_THREADS} -j 0 --top-module benchmark_tb {source_file} benchmark_tb.v && ./obj_dir/Vbenchmark_tb",
     ]
     return subprocess.run(cmd, capture_output=True, text=True)
 
