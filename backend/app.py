@@ -59,10 +59,14 @@ def init_db() -> None:
             success INTEGER,
             summary TEXT,
             status TEXT,
-            created_at TEXT
+            created_at TEXT,
+            is_deleted INTEGER NOT NULL DEFAULT 0
         )
         """
     )
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(jobs)")}
+    if "is_deleted" not in columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0")
     conn.commit()
     conn.close()
 
@@ -78,16 +82,20 @@ def update_job(job_id: str, **fields) -> None:
     # Update pattern is intentionally idempotent so worker/API can call safely.
     conn = sqlite3.connect(DB_PATH)
     existing = conn.execute(
-        "SELECT job_id FROM jobs WHERE job_id = ?",
+        "SELECT job_id, is_deleted FROM jobs WHERE job_id = ?",
         (job_id,),
     ).fetchone()
+
+    if existing and existing[1] == 1:
+        conn.close()
+        return
 
     if not existing:
         # First write for a job creates the canonical row.
         conn.execute(
             """
-            INSERT INTO jobs (job_id, prompt, success, summary, status, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO jobs (job_id, prompt, success, summary, status, created_at, is_deleted)
+            VALUES (?, ?, ?, ?, ?, ?, 0)
             """,
             (
                 job_id,
@@ -114,6 +122,29 @@ def update_job(job_id: str, **fields) -> None:
 
     conn.commit()
     conn.close()
+
+
+def delete_job(job_id: str) -> bool:
+    """Mark a job as deleted and remove its on-disk artifacts."""
+    conn = sqlite3.connect(DB_PATH)
+    row = conn.execute(
+        "SELECT job_id FROM jobs WHERE job_id = ? AND is_deleted = 0",
+        (job_id,),
+    ).fetchone()
+
+    if not row:
+        conn.close()
+        return False
+
+    conn.execute(
+        "UPDATE jobs SET is_deleted = 1 WHERE job_id = ?",
+        (job_id,),
+    )
+    conn.commit()
+    conn.close()
+
+    shutil.rmtree(JOBS_DIR / job_id, ignore_errors=True)
+    return True
 
 
 def read_logs(job_id: str) -> tuple[str, str]:
@@ -209,7 +240,7 @@ def get_status(job_id: str):
     """
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute(
-        "SELECT job_id, success, summary, status FROM jobs WHERE job_id = ?",
+        "SELECT job_id, success, summary, status FROM jobs WHERE job_id = ? AND is_deleted = 0",
         (job_id,),
     ).fetchone()
     conn.close()
@@ -248,6 +279,15 @@ def download_generated_file(job_id: str, stage: str | None = None):
     omitted to return the final `generated.v` artifact.
     """
     job_dir = JOBS_DIR / job_id
+    conn = sqlite3.connect(DB_PATH)
+    row = conn.execute(
+        "SELECT job_id FROM jobs WHERE job_id = ? AND is_deleted = 0",
+        (job_id,),
+    ).fetchone()
+    conn.close()
+
+    if not row:
+        return JSONResponse(status_code=404, content={"error": "Job not found"})
 
     if stage == "stageA":
         file_path = job_dir / "stageA.v"
@@ -270,6 +310,16 @@ def download_generated_file(job_id: str, stage: str | None = None):
 @app.get("/logs/{job_id}")
 def get_logs(job_id: str):
     """Return captured simulation stdout/stderr for a job."""
+    conn = sqlite3.connect(DB_PATH)
+    row = conn.execute(
+        "SELECT job_id FROM jobs WHERE job_id = ? AND is_deleted = 0",
+        (job_id,),
+    ).fetchone()
+    conn.close()
+
+    if not row:
+        return JSONResponse(status_code=404, content={"error": "Job not found"})
+
     stdout, stderr = read_logs(job_id)
 
     if not stdout and not stderr:
@@ -293,6 +343,7 @@ def get_history():
         """
         SELECT job_id, success, summary, status, created_at
         FROM jobs
+        WHERE is_deleted = 0
         ORDER BY created_at DESC
         """
     ).fetchall()
@@ -318,6 +369,27 @@ def get_history():
         jobs.append(job)
 
     return JSONResponse(content={"jobs": jobs})
+
+
+@app.delete("/history/{job_id}")
+def remove_history_item(job_id: str):
+    """Delete a single job from history and remove its artifacts."""
+    if delete_job(job_id):
+        return JSONResponse(content={"ok": True})
+    return JSONResponse(status_code=404, content={"error": "Job not found"})
+
+
+@app.delete("/history")
+def clear_history():
+    """Delete all visible history entries."""
+    conn = sqlite3.connect(DB_PATH)
+    job_ids = [row[0] for row in conn.execute("SELECT job_id FROM jobs WHERE is_deleted = 0").fetchall()]
+    conn.close()
+
+    for job_id in job_ids:
+        delete_job(job_id)
+
+    return JSONResponse(content={"ok": True, "deleted": len(job_ids)})
 
 
 @app.get("/system-status")

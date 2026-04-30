@@ -324,6 +324,18 @@
       box-shadow: none;
     }
 
+    .danger-btn {
+      background: rgba(255, 95, 109, 0.12);
+      color: #ff8f9a;
+      border: 1px solid rgba(255, 95, 109, 0.28);
+      box-shadow: none;
+    }
+
+    .danger-btn:hover {
+      background: rgba(255, 95, 109, 0.18);
+      box-shadow: none;
+    }
+
     .helper {
       font-size: 13px;
       color: var(--muted);
@@ -492,6 +504,7 @@
         <div class="actions" style="margin-top:0; margin-bottom:10px;">
           <h2 class="section-title" style="margin:0;">Job History</h2>
           <button class="secondary-btn" type="button" onclick="loadHistory()">Refresh</button>
+          <button class="danger-btn" type="button" onclick="clearHistory()">Delete All</button>
         </div>
         <p class="section-copy">
           Review recent HDLFACTORY runs, inspect summaries, and download generated Verilog from successful jobs.
@@ -740,12 +753,56 @@
           </div>
           <div>${escapeHtml(j.summary || "")}</div>
           <div class="helper">${escapeHtml(j.created_at || "")}</div>
+          <div class="actions" style="margin-top:12px;">
           ${j.download_url ? `<a class="button-link" href="${API_BASE}${j.download_url}">Download Final</a>` : ""}
           ${j.stageA_download_url ? `<a class="secondary-btn" href="${API_BASE}${j.stageA_download_url}">Stage A Draft</a>` : ""}
           <button class="secondary-btn" onclick="loadHistoryLogs('${j.job_id}', this)">Logs</button>
+          <button class="danger-btn" type="button" onclick="deleteHistoryJob('${j.job_id}')">Delete</button>
+          </div>
           <div class="historyLogs"></div>
         </div>
       `).join("");
+    }
+
+    /**
+    * Delete one history row and refresh the list.
+    * @param {string} jobId - Job UUID.
+     */
+    async function deleteHistoryJob(jobId) {
+      if (!confirm(`Delete history entry ${jobId}? This removes its logs and generated files.`)) {
+        return;
+      }
+
+      const response = await fetch(`${API_BASE}/history/${jobId}`, { method: "DELETE" });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        alert(data.error || "Failed to delete history entry");
+        return;
+      }
+
+      loadHistory();
+      loadSystemStatus();
+    }
+
+    /**
+    * Delete all history rows currently visible.
+     */
+    async function clearHistory() {
+      if (!confirm("Delete all job history entries? This removes their logs and generated files.")) {
+        return;
+      }
+
+      const response = await fetch(`${API_BASE}/history`, { method: "DELETE" });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        alert(data.error || "Failed to delete job history");
+        return;
+      }
+
+      loadHistory();
+      loadSystemStatus();
     }
 
     /**
