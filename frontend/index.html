@@ -760,7 +760,7 @@
         actionHtml += `<a class="button-link draft-btn" href="${API_BASE}${data.stageA_download_url}">Download Draft</a>`;
       }
 
-      actionHtml += `<button class="secondary-btn" onclick="loadLogs('${data.job_id}')">Logs</button>`;
+      actionHtml += `<button class="secondary-btn" onclick="loadLogs('${data.job_id}', this)">Logs</button>`;
 
       result.innerHTML = `
         <div class="result-panel">
@@ -773,17 +773,41 @@
     }
 
     /**
-    * Load and display logs for the latest submitted job card.
+    * Load and display logs for the latest submitted job card, with toggle functionality.
     * @param {string} jobId - Job UUID.
+    * @param {HTMLButtonElement} button - Button element to update state.
      */
-    async function loadLogs(jobId) {
-      const r = await fetch(`${API_BASE}/logs/${jobId}`);
-      const data = await r.json();
+    async function loadLogs(jobId, button) {
+      const logsEl = document.getElementById("logs");
 
-      document.getElementById("logs").innerHTML = `
-        <div class="log"><strong>STDOUT</strong>\n\n${escapeHtml(data.stdout || "")}</div>
-        <div class="log"><strong>STDERR</strong>\n\n${escapeHtml(data.stderr || "")}</div>
-      `;
+      // Toggle closed if logs are already visible.
+      if (logsEl.innerHTML.trim()) {
+        logsEl.innerHTML = "";
+        button.textContent = "Logs";
+        return;
+      }
+
+      button.textContent = "Loading...";
+
+      try {
+        const r = await fetch(`${API_BASE}/logs/${jobId}`);
+        const data = await r.json();
+
+        if (!r.ok) {
+          logsEl.innerHTML = `<div class="helper">${escapeHtml(data.error || "Logs unavailable")}</div>`;
+          button.textContent = "Hide Logs";
+          return;
+        }
+
+        logsEl.innerHTML = `
+          <div class="log"><strong>STDOUT</strong>\n\n${escapeHtml(data.stdout || "")}</div>
+          <div class="log"><strong>STDERR</strong>\n\n${escapeHtml(data.stderr || "")}</div>
+        `;
+        button.textContent = "Hide Logs";
+      } catch (err) {
+        logsEl.innerHTML = `<div class="fail">Failed to load logs: ${escapeHtml(err.message)}</div>`;
+        button.textContent = "Hide Logs";
+      }
     }
 
     /**
@@ -866,14 +890,37 @@
     * @param {HTMLButtonElement} button - Row button used to find target container.
      */
     async function loadHistoryLogs(jobId, button) {
-      const container = button.parentElement.querySelector(".historyLogs");
-      const r = await fetch(`${API_BASE}/logs/${jobId}`);
-      const data = await r.json();
+      const container = button.closest(".job")?.querySelector(".historyLogs");
+      if (!container) return;
 
-      container.innerHTML = `
-        <div class="log"><strong>STDOUT</strong>\n\n${escapeHtml(data.stdout || "")}</div>
-        <div class="log"><strong>STDERR</strong>\n\n${escapeHtml(data.stderr || "")}</div>
-      `;
+      // Toggle closed if this row's logs are already visible.
+      if (container.innerHTML.trim()) {
+        container.innerHTML = "";
+        button.textContent = "Logs";
+        return;
+      }
+
+      button.textContent = "Loading...";
+
+      try {
+        const r = await fetch(`${API_BASE}/logs/${jobId}`);
+        const data = await r.json();
+
+        if (!r.ok) {
+          container.innerHTML = `<div class="helper">${escapeHtml(data.error || "Logs unavailable")}</div>`;
+          button.textContent = "Hide Logs";
+          return;
+        }
+
+        container.innerHTML = `
+          <div class="log"><strong>STDOUT</strong>\n\n${escapeHtml(data.stdout || "")}</div>
+          <div class="log"><strong>STDERR</strong>\n\n${escapeHtml(data.stderr || "")}</div>
+        `;
+        button.textContent = "Hide Logs";
+      } catch (err) {
+        container.innerHTML = `<div class="fail">Failed to load logs: ${escapeHtml(err.message)}</div>`;
+        button.textContent = "Hide Logs";
+      }
     }
 
     /**

@@ -40,8 +40,8 @@ services:
       - |
         echo "Waiting for Ollama..."
         curl -fsS http://ollama:11434/api/tags >/dev/null
-        echo "Pulling mistral:7b..."
-        curl -fsS -X POST http://ollama:11434/api/pull -H 'Content-Type: application/json' -d '{"name":"mistral:7b","stream":false}'
+        echo "Pulling ministral-3:3b..."
+        curl -fsS -X POST http://ollama:11434/api/pull -H 'Content-Type: application/json' -d '{"name":"ministral-3:3b","stream":false}'
         echo "Pulling codestral:22B..."
         curl -fsS -X POST http://ollama:11434/api/pull -H 'Content-Type: application/json' -d '{"name":"codestral:22B","stream":false}'
         echo "Model pull complete."

@@ -17,7 +17,8 @@ import requests
 
 OLLAMA_URL = "http://ollama:11434/api/generate"
 OLLAMA_PS_URL = "http://ollama:11434/api/ps"
-MODEL = "mistral:7b"
+# Switched to Ministral-3 (3B)
+MODEL = "ministral-3:3b"
 
 # Worker runs inside /app and shares mounted job/data folders with backend.
 BASE_DIR = Path("/app")
@@ -181,7 +182,7 @@ def run_benchmark(job_dir: Path, source_file: str = "generated.v"):
     cmd = [
         "bash",
         "-lc",
-        f"cd {job_dir} && verilator --binary --threads {MAX_THREADS} -j 0 --top-module benchmark_tb {source_file} benchmark_tb.v && ./obj_dir/Vbenchmark_tb",
+        f"cd {job_dir} && verilator --binary --threads {MAX_THREADS} -j 0 --top-module benchmark_tb -Wno-fatal {source_file} benchmark_tb.v && ./obj_dir/Vbenchmark_tb",
     ]
     return subprocess.run(cmd, capture_output=True, text=True)
 
@@ -223,7 +224,7 @@ def process_job(job):
         update_job(
             job_id,
             None,
-            "Step 1 of 5: Generating Verilog with Mistral-7B...",
+            "Step 1 of 5: Generating Verilog with Ministral-3 (3B)...",
             "generating",
         )
 

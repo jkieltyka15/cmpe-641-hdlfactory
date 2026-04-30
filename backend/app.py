@@ -34,7 +34,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-MODEL = "mistral:7b"
+# Generation model used by the system (switched to Ministral-3 (3B)).
+MODEL = "ministral-3:3b"
 
 # All runtime artifacts are stored relative to the backend container working dir.
 BASE_DIR = Path(__file__).resolve().parent
@@ -345,6 +346,7 @@ def get_logs(job_id: str):
 @app.get("/history")
 def get_history():
     # Most-recent-first ordering keeps the latest activity at the top of the UI.
+    conn = sqlite3.connect(DB_PATH)
     rows = conn.execute(
         """
         SELECT job_id, success, summary, status, created_at
@@ -359,8 +361,6 @@ def get_history():
     # Re-map DB rows into API schema expected by the frontend list renderer.
     for job_id, success, summary, status, created_at in rows:
         # Convert DB-native types into client-facing JSON values.
-    # Re-map DB rows into API schema expected by the frontend list renderer.
-    for job_id, success, summary, status, created_at in rows:
         job = {
             "job_id": job_id,
             "success": None if success is None else bool(success),

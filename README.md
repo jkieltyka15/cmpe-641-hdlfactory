@@ -2,7 +2,7 @@
 
 **AI-Powered HDL Generation, Optimization, and Validation Platform**
 
-HDLFACTORY is an end-to-end system for generating synthesizable Verilog hardware designs from natural language specifications, automatically optimizing them for physical size and power, and validating them against user-provided testbenches. It leverages large language models (Mistral-7B for generation, Codestral-22B for optimization) and industry-standard tools (Verilator, Icarus Verilog) to produce production-ready RTL artifacts.
+HDLFACTORY is an end-to-end system for generating synthesizable Verilog hardware designs from natural language specifications, automatically optimizing them for physical size and power, and validating them against user-provided testbenches. It leverages large language models (Ministral-3 (3B) for generation, Codestral-22B for optimization) and industry-standard tools (Verilator, Icarus Verilog) to produce production-ready RTL artifacts.
 
 ## Architecture Overview
 
@@ -34,10 +34,9 @@ HDLFACTORY is an end-to-end system for generating synthesizable Verilog hardware
                    │
            (Worker consumes queue)
                    ▼
-           ┌──────────────────────────────────┐
-           │    Worker (async processor)      │
-           │  5-Stage Pipeline:               │
-           │  1. Generate Verilog (Mistral)   │
+            ┌──────────────────────────────────┐
+            │    Worker (async processor)      │
+            │  1. Generate Verilog (Ministral-3)   │
            │  2. Validate (Verilator)         │
            │  3. Optimize (Codestral)         │
            │  4. Validate opt. (Verilator)    │
@@ -81,7 +80,7 @@ HDLFACTORY is an end-to-end system for generating synthesizable Verilog hardware
    This will:
    - Pull and build all service images (backend, worker, frontend, verilator)
    - Start Redis and Ollama services
-   - Pre-pull LLM models (Mistral-7B, Codestral-22B) — this takes ~5–10 minutes on first run
+   - Pre-pull LLM models (Ministral-3 (3B), Codestral-22B) — this takes ~5–10 minutes on first run
    - Start the FastAPI backend, async worker, and nginx frontend
    - Initialize SQLite job database
 
@@ -263,9 +262,9 @@ hdlfactory/
 
 The worker implements a five-stage pipeline:
 
-### Stage 1: Verilog Generation (Mistral-7B)
+### Stage 1: Verilog Generation (Ministral-3 (3B))
 - Ollama generate endpoint receives the user prompt
-- Mistral-7B produces synthesizable Verilog code
+- Ministral-3 (3B) produces synthesizable Verilog code
 - Output is cleaned (markdown stripped) and written to `stageA.v`
 
 ### Stage 2: Stage A Validation (Verilator)
@@ -296,7 +295,7 @@ If any stage fails, the job is marked as failed, but `stageA.v` remains availabl
 
 **Backend & Worker:**
 - `OLLAMA_URL` – Ollama API endpoint (default: `http://ollama:11434/api/generate`)
-- `MODEL` – Generation model name (default: `mistral:7b`)
+- `MODEL` – Generation model name (default: `ministral-3:3b`)
 
 **Docker Compose:**
 - `OLLAMA_VULKAN=1` – Enable Vulkan acceleration for AMD GPUs
@@ -351,7 +350,7 @@ If Ollama fails to download models:
 1. Check internet connectivity and Ollama health: `docker logs hdlfactory-ollama`
 2. Retry manually:
    ```bash
-   docker exec hdlfactory-ollama ollama pull mistral:7b
+   docker exec hdlfactory-ollama ollama pull ministral-3:3b
    docker exec hdlfactory-ollama ollama pull codestral:22B
    ```
 3. Ensure sufficient disk space (at least 50 GB for both models)
@@ -393,7 +392,7 @@ If Ollama fails to download models:
 ## References
 
 - **Ollama:** https://ollama.ai/
-- **Mistral-7B:** https://mistral.ai/
+- **Ministral-3 (3B):** https://mistral.ai/
 - **Codestral-22B:** https://mistral.ai/technology/codestral/
 - **Verilator:** https://www.veripool.org/wiki/verilator
 - **Icarus Verilog:** http://iverilog.icarus.com/
