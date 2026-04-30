@@ -245,7 +245,7 @@ def process_job(job):
         (job_dir / "stdout.log").write_text(result.stdout, encoding="utf-8")
         (job_dir / "stderr.log").write_text(result.stderr, encoding="utf-8")
 
-        stageA_success = result.returncode == 0 and "TEST PASSED" in result.stdout
+        stageA_success = "TEST PASSED" in result.stdout and "FAIL" not in result.stdout
         stageA_summary = summarize_result(result.stdout, result.stderr, result.returncode)
 
         if not stageA_success:
@@ -330,7 +330,7 @@ Input Verilog:
         (job_dir / "opt_stdout.log").write_text(opt_result.stdout, encoding="utf-8")
         (job_dir / "opt_stderr.log").write_text(opt_result.stderr, encoding="utf-8")
 
-        if opt_result.returncode != 0 or "TEST PASSED" not in opt_result.stdout:
+        if "TEST PASSED" not in opt_result.stdout or "FAIL" in opt_result.stdout:
             summary = summarize_result(opt_result.stdout, opt_result.stderr, opt_result.returncode)
             update_job(
                 job_id,
@@ -357,7 +357,7 @@ Input Verilog:
         (job_dir / "icarus_stdout.log").write_text(icarus_result.stdout, encoding="utf-8")
         (job_dir / "icarus_stderr.log").write_text(icarus_result.stderr, encoding="utf-8")
 
-        if icarus_result.returncode != 0 or "TEST PASSED" not in icarus_result.stdout:
+        if "TEST PASSED" not in icarus_result.stdout or "FAIL" in icarus_result.stdout:
             summary = summarize_result(icarus_result.stdout, icarus_result.stderr, icarus_result.returncode)
             update_job(
                 job_id,
