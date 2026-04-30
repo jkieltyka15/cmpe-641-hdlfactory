@@ -1,0 +1,409 @@
+# HDLFACTORY
+
+**AI-Powered HDL Generation, Optimization, and Validation Platform**
+
+HDLFACTORY is an end-to-end system for generating synthesizable Verilog hardware designs from natural language specifications, automatically optimizing them for physical size and power, and validating them against user-provided testbenches. It leverages large language models (Mistral-7B for generation, Codestral-22B for optimization) and industry-standard tools (Verilator, Icarus Verilog) to produce production-ready RTL artifacts.
+
+## Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        Frontend (SPA)                       │
+│                       nginx static site                     │
+│                  (port 8080, index.html)                    │
+└──────────────────┬────────────────────┬─────────────────────┘
+                   │ REST API requests  │
+                   ▼                    ▼
+           ┌──────────────────────────────────┐
+           │   Backend (FastAPI)              │
+           │  POST /generate                  │
+           │  GET /status/{id}                │
+           │  GET /history                    │
+           │  DELETE /history/{id}            │
+           │  GET /logs/{id}                  │
+           │  GET /download/{id}              │
+           │  GET /system-status              │
+           └──────┬──────────────┬────────────┘
+                  │              │
+       Job Queue  │              │ SQLite
+       (Redis)    ▼              ▼ (jobs.db)
+           ┌──────────────────────────────────┐
+           │   Job State & Artifacts          │
+           │   (Shared Volume)                │
+           └───────┬──────────────────────────┘
+                   │
+           (Worker consumes queue)
+                   ▼
+           ┌──────────────────────────────────┐
+           │    Worker (async processor)      │
+           │  5-Stage Pipeline:               │
+           │  1. Generate Verilog (Mistral)   │
+           │  2. Validate (Verilator)         │
+           │  3. Optimize (Codestral)         │
+           │  4. Validate opt. (Verilator)    │
+           │  5. Final test (Icarus Verilog)  │
+           └───────┬──────────────────────────┘
+                   │
+        ┌──────────┴──────────┬────────────┐
+        ▼                     ▼            ▼
+    ┌─────────┐         ┌──────────┐  ┌──────────┐
+    │ Ollama  │         │ Verilator│  │ Icarus   │
+    │ Runtime │         │ (compile │  │ Verilog  │
+    │ Models  │         │  +sim)   │  │ (sim)    │
+    │ (GPU)   │         └──────────┘  └──────────┘
+    └─────────┘
+```
+
+## Quick Start
+
+### Prerequisites
+
+- **Docker & Docker Compose** (v2.0+)
+- **GPU Support** (recommended for Ollama inference; CPU-only mode available)
+  - NVIDIA GPU with CUDA support (or AMD with ROCm)
+  - GPU device nodes mounted into containers (already configured in docker-compose.yml)
+- **At least 32 GB free disk space** (for model cache and job artifacts)
+- **8+ CPU cores** (for parallel Verilator compilation and simulation)
+
+### Installation & Startup
+
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/jkieltyka15/cmpe-641-hdlfactory.git
+   cd cmpe-641-hdlfactory
+   ```
+
+2. **Start all services:**
+   ```bash
+   docker-compose up -d
+   ```
+
+   This will:
+   - Pull and build all service images (backend, worker, frontend, verilator)
+   - Start Redis and Ollama services
+   - Pre-pull LLM models (Mistral-7B, Codestral-22B) — this takes ~5–10 minutes on first run
+   - Start the FastAPI backend, async worker, and nginx frontend
+   - Initialize SQLite job database
+
+3. **Access the UI:**
+   Open your browser to **http://localhost:8080**
+
+4. **Check system health:**
+   The System Status panel shows:
+   - GPU availability
+   - Active model and processor mode (CPU/GPU)
+   - Redis queue depth
+   - Worker connectivity
+
+### Basic Usage Flow
+
+1. **Create a job:**
+   - Go to the **Create Job** tab
+   - Write a natural language prompt describing the hardware design you want
+   - Upload a benchmark testbench file (Verilog)
+   - Click **Generate**
+
+2. **Monitor progress:**
+   - The status updates through 5 stages in real-time:
+     1. **Generating Verilog** – LLM creates initial design
+     2. **Simulating Stage A** – Verilator validates the generated code
+     3. **Optimizing** – Codestral-22B improves design for area/power
+     4. **Simulating Optimized** – Verilator validates the optimized version
+     5. **Running Icarus Verilog** – Final compliance check with Icarus
+
+3. **Download artifacts:**
+   - After successful completion, download the final optimized `generated.v`
+   - Or download the initial `stageA.v` draft anytime (even if final optimization failed)
+
+4. **View history:**
+   - **Job History** tab shows all past runs
+   - Click a job to see detailed logs
+   - Delete single jobs or clear entire history
+
+## API Reference
+
+All endpoints return JSON. Base URL: `http://localhost:8080/api` (or direct backend on port 8000).
+
+### POST /generate
+
+**Create a new generation job.**
+
+```bash
+curl -X POST http://localhost:8080/api/generate \
+  -F "prompt=Design a 4-bit ripple carry adder" \
+  -F "benchmark_file=@benchmark_tb.v"
+```
+
+**Response:**
+```json
+{
+  "job_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+  "status": "queued",
+  "success": null,
+  "summary": "Job queued."
+}
+```
+
+### GET /status/{job_id}
+
+**Check job status and download links.**
+
+```bash
+curl http://localhost:8080/api/status/f47ac10b-58cc-4372-a567-0e02b2c3d479
+```
+
+**Response (pending):**
+```json
+{
+  "job_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+  "status": "simulating_stageA",
+  "success": null,
+  "summary": "Step 2 of 5: Running Verilator benchmark on Stage A...",
+  "stageA_download_url": "/download/f47ac10b-58cc-4372-a567-0e02b2c3d479?stage=stageA"
+}
+```
+
+**Response (success):**
+```json
+{
+  "job_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+  "status": "completed",
+  "success": true,
+  "summary": "Step 5 of 5: Optimized design passed all tests.",
+  "download_url": "/download/f47ac10b-58cc-4372-a567-0e02b2c3d479",
+  "stageA_download_url": "/download/f47ac10b-58cc-4372-a567-0e02b2c3d479?stage=stageA"
+}
+```
+
+### GET /logs/{job_id}
+
+**Retrieve simulation stdout and stderr.**
+
+```bash
+curl http://localhost:8080/api/logs/f47ac10b-58cc-4372-a567-0e02b2c3d479
+```
+
+### GET /history
+
+**List all jobs, newest first.**
+
+```bash
+curl http://localhost:8080/api/history
+```
+
+### GET /download/{job_id}?stage=[stageA|final]
+
+**Download generated Verilog artifacts.**
+
+- `?stage=stageA` – Initial draft (if available)
+- `?stage=final` (or omitted) – Final optimized version
+
+### DELETE /history/{job_id}
+
+**Delete a single job and remove its artifacts.**
+
+### DELETE /history
+
+**Clear entire history.**
+
+### GET /system-status
+
+**Get runtime health snapshot (GPU, model, queue, worker status).**
+
+```bash
+curl http://localhost:8080/api/system-status
+```
+
+## Project Structure
+
+```
+hdlfactory/
+├── README.md                      # This file
+├── docker-compose.yml             # Service orchestration & volumes
+│
+├── frontend/                      # Static SPA
+│   ├── Dockerfile                 # nginx serving
+│   ├── index.html                 # Single-page application
+│   └── nginx.conf                 # Static site routing
+│
+├── backend/                       # FastAPI service
+│   ├── app.py                     # REST endpoints & job management
+│   ├── Dockerfile                 # Python runtime
+│   ├── requirements.txt           # Dependencies
+│   ├── data/                      # SQLite database (persistent)
+│   │   └── jobs.db                # Job metadata and status
+│   └── jobs/                      # Job artifacts (shared with worker)
+│       └── {job_id}/              # Per-job directory
+│           ├── prompt.txt         # Original user request
+│           ├── benchmark_tb.v     # Uploaded testbench
+│           ├── stageA.v           # Initial generated design
+│           ├── generated.v        # Final optimized design
+│           ├── optimized.v        # Intermediate optimization candidate
+│           ├── stdout.log         # Final simulation output
+│           ├── stderr.log         # Final simulation errors
+│           ├── codestral_stdout.log
+│           ├── opt_stdout.log     # Optimized design sim output
+│           ├── opt_stderr.log
+│           ├── icarus_stdout.log  # Icarus Verilog sim output
+│           └── icarus_stderr.log
+│
+├── worker/                        # Async job processor
+│   ├── worker.py                  # 5-stage pipeline & Ollama integration
+│   ├── Dockerfile                 # Python + tools
+│   └── requirements.txt           # Dependencies
+│
+├── verilator/                     # Verilator compilation environment
+│   └── Dockerfile                 # C++ toolchain & Verilator
+│
+└── codestral/                     # (Optimization via Ollama model)
+    └── Dockerfile                 # (Optional; not directly used)
+```
+
+## Worker Pipeline Stages
+
+The worker implements a five-stage pipeline:
+
+### Stage 1: Verilog Generation (Mistral-7B)
+- Ollama generate endpoint receives the user prompt
+- Mistral-7B produces synthesizable Verilog code
+- Output is cleaned (markdown stripped) and written to `stageA.v`
+
+### Stage 2: Stage A Validation (Verilator)
+- Verilator compiles `stageA.v` against `benchmark_tb.v`
+- If compilation or simulation fails, job terminates with error
+- If testbench passes, proceeds to optimization
+
+### Stage 3: Optimization (Codestral-22B)
+- Codestral-22B reads `stageA.v` and produces optimized Verilog
+- Optimization targets area and power reduction while preserving behavior
+- Result written to `optimized.v`
+
+### Stage 4: Optimized Design Validation (Verilator)
+- Verilator compiles and simulates `optimized.v` against benchmark
+- If testbench fails, job terminates (Stage A is still available for download)
+- If testbench passes, proceeds to final validation
+
+### Stage 5: Final Validation (Icarus Verilog)
+- Icarus Verilog runs simulation as final compliance check
+- Upon success, `optimized.v` is renamed to `generated.v` for public download
+- Consolidated logs written for frontend display
+
+If any stage fails, the job is marked as failed, but `stageA.v` remains available for debugging.
+
+## Configuration
+
+### Environment Variables
+
+**Backend & Worker:**
+- `OLLAMA_URL` – Ollama API endpoint (default: `http://ollama:11434/api/generate`)
+- `MODEL` – Generation model name (default: `mistral:7b`)
+
+**Docker Compose:**
+- `OLLAMA_VULKAN=1` – Enable Vulkan acceleration for AMD GPUs
+- GPU device mounting uses `/dev/dri:/dev/dri` for both NVIDIA and AMD
+
+### Database Schema
+
+The SQLite `jobs` table:
+
+```sql
+CREATE TABLE jobs (
+  job_id TEXT PRIMARY KEY,
+  prompt TEXT,
+  success INTEGER,           -- NULL: pending, 0: failed, 1: success
+  summary TEXT,              -- Human-readable status line
+  status TEXT,               -- queued, generating, simulating_stageA, optimizing, etc.
+  created_at TEXT,           -- ISO 8601 timestamp
+  is_deleted INTEGER          -- Soft-delete flag (0: visible, 1: hidden)
+);
+```
+
+## Development & Troubleshooting
+
+### Check Logs
+
+**Backend:**
+```bash
+docker logs hdlfactory-backend
+```
+
+**Worker:**
+```bash
+docker logs hdlfactory-worker
+```
+
+**Ollama:**
+```bash
+docker logs hdlfactory-ollama
+```
+
+### GPU Detection Issues
+
+If the system status shows "GPU: unknown" but you have a GPU installed:
+1. Verify GPU device nodes exist: `ls /dev/nvidia* 2>/dev/null || echo "No NVIDIA GPU devices"`
+2. Check docker-compose.yml mounts `/dev/dri` correctly
+3. Inspect Ollama output for processor hints: `docker logs hdlfactory-ollama | grep -i processor`
+4. Try CPU-only mode: set Ollama `OLLAMA_NUM_PARALLEL=1` (slower but works)
+
+### Model Pull Failures
+
+If Ollama fails to download models:
+1. Check internet connectivity and Ollama health: `docker logs hdlfactory-ollama`
+2. Retry manually:
+   ```bash
+   docker exec hdlfactory-ollama ollama pull mistral:7b
+   docker exec hdlfactory-ollama ollama pull codestral:22B
+   ```
+3. Ensure sufficient disk space (at least 50 GB for both models)
+
+### Job Stuck or Timeout
+
+- Long Verilator compilations can take 1–5 minutes depending on complexity
+- Ollama inference can take 2–10 minutes on CPU or 30s–2 min on GPU
+- Check worker logs: `docker logs hdlfactory-worker | tail -100`
+- If worker crashed, restart: `docker restart hdlfactory-worker`
+
+### Verilog Compilation Errors
+
+- Review detailed logs via the UI (Logs tab) or API (`GET /logs/{job_id}`)
+- Stage A logs appear after Step 2; optimized design logs after Step 4
+- Icarus Verilog logs appear after Step 5
+
+### Redis Queue Backlog
+
+- If queue depth grows, check worker availability: `docker exec hdlfactory-redis redis-cli llen hdl_jobs`
+- Verify worker is running: `docker ps | grep hdlfactory-worker`
+- Scale workers by running additional containers (currently single worker)
+
+## Performance Notes
+
+- **GPU:** LLM inference typically 30s–2min per stage (much faster than CPU)
+- **CPU:** LLM inference 5–15 minutes per stage (recommended only for testing)
+- **Verilator:** Compilation 30s–2min depending on design complexity
+- **Disk I/O:** Job artifacts (logs, generated files) typically 1–10 MB per job
+- **Memory:** Backend ~200 MB, Worker ~500 MB, Ollama ~8–16 GB (for model cache)
+
+## Security Notes
+
+- CORS is open (`allow_origins=["*"]`) for local development; restrict in production
+- No authentication implemented; add if exposing over network
+- SQL injection is prevented via parameterized queries
+- Model outputs are validated before writing to disk (markdown stripped)
+
+## References
+
+- **Ollama:** https://ollama.ai/
+- **Mistral-7B:** https://mistral.ai/
+- **Codestral-22B:** https://mistral.ai/technology/codestral/
+- **Verilator:** https://www.veripool.org/wiki/verilator
+- **Icarus Verilog:** http://iverilog.icarus.com/
+- **FastAPI:** https://fastapi.tiangolo.com/
+- **Redis:** https://redis.io/
+
+## License
+
+Project developed for UMBC CMPE 641 (Spring 2026).
+
+---
+
+**Questions or Issues?** Check the troubleshooting section above or review logs in the appropriate service container.

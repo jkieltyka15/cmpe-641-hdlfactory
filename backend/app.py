@@ -54,6 +54,7 @@ def init_db() -> None:
     """Create required SQLite schema if it does not already exist."""
     # Keep DB access short-lived per call; SQLite handles local file locking.
     conn = sqlite3.connect(DB_PATH)
+    # Create the baseline jobs table for fresh deployments.
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS jobs (
@@ -67,6 +68,7 @@ def init_db() -> None:
         )
         """
     )
+    # Apply lightweight migration so older DB files still work.
     columns = {row[1] for row in conn.execute("PRAGMA table_info(jobs)")}
     if "is_deleted" not in columns:
         conn.execute("ALTER TABLE jobs ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0")
@@ -130,6 +132,7 @@ def update_job(job_id: str, **fields) -> None:
 def delete_job(job_id: str) -> bool:
     """Mark a job as deleted and remove its on-disk artifacts."""
     conn = sqlite3.connect(DB_PATH)
+    # Guard against deleting rows already hidden from history.
     row = conn.execute(
         "SELECT job_id FROM jobs WHERE job_id = ? AND is_deleted = 0",
         (job_id,),
@@ -139,6 +142,7 @@ def delete_job(job_id: str) -> bool:
         conn.close()
         return False
 
+    # Soft-delete preserves historical records while hiding them from the API.
     conn.execute(
         "UPDATE jobs SET is_deleted = 1 WHERE job_id = ?",
         (job_id,),
@@ -340,8 +344,7 @@ def get_logs(job_id: str):
 
 @app.get("/history")
 def get_history():
-    """Return all jobs ordered by newest first for dashboard history."""
-    conn = sqlite3.connect(DB_PATH)
+    # Most-recent-first ordering keeps the latest activity at the top of the UI.
     rows = conn.execute(
         """
         SELECT job_id, success, summary, status, created_at
@@ -353,6 +356,9 @@ def get_history():
     conn.close()
 
     jobs = []
+    # Re-map DB rows into API schema expected by the frontend list renderer.
+    for job_id, success, summary, status, created_at in rows:
+        # Convert DB-native types into client-facing JSON values.
     # Re-map DB rows into API schema expected by the frontend list renderer.
     for job_id, success, summary, status, created_at in rows:
         job = {
@@ -386,9 +392,11 @@ def remove_history_item(job_id: str):
 def clear_history():
     """Delete all visible history entries."""
     conn = sqlite3.connect(DB_PATH)
+    # Snapshot IDs first so we can close DB before filesystem deletions.
     job_ids = [row[0] for row in conn.execute("SELECT job_id FROM jobs WHERE is_deleted = 0").fetchall()]
     conn.close()
 
+    # Reuse single-item delete path so semantics stay consistent.
     for job_id in job_ids:
         delete_job(job_id)
 
@@ -407,6 +415,7 @@ def get_system_status():
     # Queue depth is a quick signal of backlog pressure.
     queue_depth = redis_client.llen("hdl_jobs")
 
+    # Keep the helper nested because it is only used by this endpoint.
     # Try to detect GPU programmatically rather than hardcoding.
     def detect_gpu() -> str:
         # 1) Environment hint for NVIDIA in container runtimes
@@ -478,11 +487,13 @@ def get_system_status():
             pass
 
         return "unknown"
-
+# Default values are optimistic but safe; they get refined below.
     gpu_name = detect_gpu()
     model_name = MODEL
     processor = "unknown"
     worker_status = "online"
+
+    # Normalize verbose GPU descriptions into compact UI-friendly labels.    worker_status = "online"
 
     def trim_gpu_name(raw: str) -> str:
         """Return a short vendor+model string for display."""

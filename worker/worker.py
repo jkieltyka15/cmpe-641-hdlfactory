@@ -32,8 +32,10 @@ redis_client = redis.Redis(host="redis", port=6379, decode_responses=True)
 def available_threads() -> int:
     """Return the CPU count visible to the current process."""
     try:
+        # Linux affinity reports the CPUs this container/process can actually use.
         return len(os.sched_getaffinity(0))
     except (AttributeError, OSError):
+        # Fallback for platforms without sched_getaffinity support.
         return os.cpu_count() or 1
 
 
@@ -57,6 +59,8 @@ def clean_verilog(text: str) -> str:
 
 def generate_verilog(prompt: str) -> str:
     """Request Verilog from Ollama using a constrained generation prompt."""
+    # Wrap the user task with strict output constraints so downstream tooling
+    # receives machine-consumable Verilog (not prose or fenced markdown).
     full_prompt = f"""You are a Verilog code generator.
 
 Assume the user's request is for a synthesizable hardware design unless it
@@ -74,6 +78,7 @@ Rules:
 - Must compile with Verilator
 """
 
+    # Non-streaming mode keeps response handling simple in this worker.
     payload = {
         "model": MODEL,
         "prompt": full_prompt,
@@ -122,6 +127,7 @@ def update_job(job_id: str, success, summary: str, status: str):
     """
     # Keep DB writes explicit and short to minimize lock contention.
     conn = sqlite3.connect(DB_PATH)
+    # Use a parameterized update so status text cannot affect SQL structure.
     conn.execute(
         "UPDATE jobs SET success = ?, summary = ?, status = ? WHERE job_id = ?",
         (success, summary, status, job_id),
@@ -397,7 +403,9 @@ Input Verilog:
 
 def main():
     """Start the long-running Redis consumer loop."""
+    # Startup banner helps confirm container readiness in orchestration logs.
     print("HDLFACTORY worker starting...")
+    # One-time diagnostic snapshot before processing the first job.
     detect_processor()
 
     while True:
@@ -405,6 +413,7 @@ def main():
         _, job_json = redis_client.blpop("hdl_jobs")
         # Redis returns JSON string payload; decode then process.
         job = json.loads(job_json)
+        # Process each job synchronously to keep resource usage predictable.
         process_job(job)
 
 
