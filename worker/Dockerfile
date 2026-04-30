@@ -4,13 +4,14 @@ FROM python:3.11-slim
 # Application working directory inside the container.
 WORKDIR /app
 
-# Install toolchain needed to compile and run Verilator benchmarks.
+# Install toolchain needed to compile and run Verilator benchmarks and Icarus.
 RUN apt-get update && apt-get install -y \
-    verilator \
-    g++ \
-    make \
-    bash \
-    && rm -rf /var/lib/apt/lists/*
+        verilator \
+        iverilog \
+        g++ \
+        make \
+        bash \
+        && rm -rf /var/lib/apt/lists/*
 
 # Install worker Python dependencies.
 COPY requirements.txt .

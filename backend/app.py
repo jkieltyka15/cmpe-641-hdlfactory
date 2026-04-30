@@ -227,17 +227,34 @@ def get_status(job_id: str):
         "status": status,
     }
 
+    # Always expose a Stage A download link if the draft exists.
+    job_dir = JOBS_DIR / job_id
+    stageA_path = job_dir / "stageA.v"
+    if stageA_path.exists():
+        response["stageA_download_url"] = f"/download/{job_id}?stage=stageA"
+
     if success == 1:
-        # Download is only valid for successful job outputs.
+        # Download is only valid for successful job outputs (final optimized design).
         response["download_url"] = f"/download/{job_id}"
 
     return JSONResponse(content=response)
 
 
 @app.get("/download/{job_id}")
-def download_generated_file(job_id: str):
-    """Serve generated.v for a completed job when present on disk."""
-    file_path = JOBS_DIR / job_id / "generated.v"
+def download_generated_file(job_id: str, stage: str | None = None):
+    """Serve generated artifacts for a job.
+
+    Query parameter `stage` may be `stageA` to retrieve the initial draft, or
+    omitted to return the final `generated.v` artifact.
+    """
+    job_dir = JOBS_DIR / job_id
+
+    if stage == "stageA":
+        file_path = job_dir / "stageA.v"
+        download_name = "stageA.v"
+    else:
+        file_path = job_dir / "generated.v"
+        download_name = "generated.v"
 
     # File may be absent if job failed or has not finished yet.
     if not file_path.exists():
@@ -245,7 +262,7 @@ def download_generated_file(job_id: str):
 
     return FileResponse(
         path=file_path,
-        filename="generated.v",
+        filename=download_name,
         media_type="text/plain",
     )
 
@@ -291,6 +308,11 @@ def get_history():
             "status": status,
             "created_at": created_at,
         }
+        # Always offer Stage A draft when present for debugging and access.
+        job_dir = JOBS_DIR / job_id
+        if (job_dir / "stageA.v").exists():
+            job["stageA_download_url"] = f"/download/{job_id}?stage=stageA"
+
         if success == 1:
             job["download_url"] = f"/download/{job_id}"
         jobs.append(job)

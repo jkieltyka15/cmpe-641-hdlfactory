@@ -691,7 +691,11 @@
       `;
 
       if (data.download_url) {
-        html += `<br><br><a class="button-link" href="${API_BASE}${data.download_url}">Download Verilog</a>`;
+        html += `<br><br><a class="button-link" href="${API_BASE}${data.download_url}">Download Final Verilog</a>`;
+      }
+
+      if (data.stageA_download_url) {
+        html += `<br><br><a class="secondary-btn" href="${API_BASE}${data.stageA_download_url}">Download Stage A Draft</a>`;
       }
 
       html += `<br><br><button onclick="loadLogs('${data.job_id}')">View Logs</button>`;
@@ -736,7 +740,8 @@
           </div>
           <div>${escapeHtml(j.summary || "")}</div>
           <div class="helper">${escapeHtml(j.created_at || "")}</div>
-          ${j.download_url ? `<a class="button-link" href="${API_BASE}${j.download_url}">Download</a>` : ""}
+          ${j.download_url ? `<a class="button-link" href="${API_BASE}${j.download_url}">Download Final</a>` : ""}
+          ${j.stageA_download_url ? `<a class="secondary-btn" href="${API_BASE}${j.stageA_download_url}">Stage A Draft</a>` : ""}
           <button class="secondary-btn" onclick="loadHistoryLogs('${j.job_id}', this)">Logs</button>
           <div class="historyLogs"></div>
         </div>

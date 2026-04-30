@@ -32,16 +32,19 @@ services:
     depends_on:
       ollama:
         condition: service_healthy
-    entrypoint: ["/bin/sh", "-c"]
-    command: |
-      set -e
-      echo "Waiting for Ollama..."
-      curl -fsS http://ollama:11434/api/tags >/dev/null
-      echo "Pulling mistral:7b..."
-      curl -fsS -X POST http://ollama:11434/api/pull \
-        -H 'Content-Type: application/json' \
-        -d '{"name":"mistral:7b","stream":false}'
-      echo "Model pull complete."
+    # Use an explicit shell invocation to avoid compose argument tokenization
+    # issues that can truncate scripts when using `entrypoint: ["/bin/sh", "-c"]`.
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        echo "Waiting for Ollama..."
+        curl -fsS http://ollama:11434/api/tags >/dev/null
+        echo "Pulling mistral:7b..."
+        curl -fsS -X POST http://ollama:11434/api/pull -H 'Content-Type: application/json' -d '{"name":"mistral:7b","stream":false}'
+        echo "Pulling codestral:22B..."
+        curl -fsS -X POST http://ollama:11434/api/pull -H 'Content-Type: application/json' -d '{"name":"codestral:22B","stream":false}'
+        echo "Model pull complete."
     restart: "no"
 
   # FastAPI service that accepts jobs and exposes status/history APIs.
@@ -75,6 +78,9 @@ services:
       - ./backend/jobs:/app/jobs
       - ./backend/data:/app/data
     restart: unless-stopped
+    
+
+  # (codestral optimization is provided via the Ollama model `codestral:22B`)
 
   # Static frontend served by nginx.
   frontend:
@@ -90,3 +96,4 @@ services:
 volumes:
   # Persisted Ollama model cache across container restarts.
   ollama_models:
+  # (no local codestral binary volume required; Ollama model is used)
