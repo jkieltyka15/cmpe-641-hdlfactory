@@ -59,13 +59,18 @@ def generate_verilog(prompt: str) -> str:
     """Request Verilog from Ollama using a constrained generation prompt."""
     full_prompt = f"""You are a Verilog code generator.
 
+Assume the user's request is for a synthesizable hardware design unless it
+explicitly asks for something else. If the request is ambiguous, infer a
+synthesizable RTL implementation.
+
 Task:
 {prompt}
 
 Rules:
-- Output ONLY Verilog code
+- Output ONLY synthesizable Verilog code
 - No markdown
 - No explanation
+- No testbench
 - Must compile with Verilator
 """
 
