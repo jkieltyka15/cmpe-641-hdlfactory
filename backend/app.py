@@ -13,6 +13,9 @@ import sqlite3
 import uuid
 from datetime import datetime
 from pathlib import Path
+import subprocess
+import os
+import glob
 
 import redis
 import requests
@@ -404,11 +407,138 @@ def get_system_status():
     # Queue depth is a quick signal of backlog pressure.
     queue_depth = redis_client.llen("hdl_jobs")
 
-    # GPU is currently reported as static metadata for this deployment.
-    gpu_name = "AMD RX 5700"
+    # Try to detect GPU programmatically rather than hardcoding.
+    def detect_gpu() -> str:
+        # 1) Environment hint for NVIDIA in container runtimes
+        nv_env = os.environ.get("NVIDIA_VISIBLE_DEVICES")
+        if nv_env and nv_env.lower() not in ("none", "void"):
+            return f"NVIDIA ({nv_env})"
+
+        # 2) /dev presence (typical when GPU device nodes are mounted)
+        if Path("/dev/nvidia0").exists():
+            # Prefer nvidia-smi output when available
+            try:
+                out = subprocess.check_output(["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"], stderr=subprocess.DEVNULL, timeout=2)
+                name = out.decode().splitlines()[0].strip()
+                if name:
+                    return name
+            except Exception:
+                return "NVIDIA (device)"
+
+        # 3) /proc driver listing (NVIDIA exposes GPUs under this path)
+        try:
+            if Path("/proc/driver/nvidia/gpus").exists():
+                # Return first GPU directory name if present
+                entries = list(Path("/proc/driver/nvidia/gpus").iterdir())
+                if entries:
+                    return f"NVIDIA ({entries[0].name})"
+        except Exception:
+            pass
+
+        # 4) Try ROCm (AMD) tooling
+        try:
+            out = subprocess.check_output(["rocm-smi", "-i"], stderr=subprocess.DEVNULL, timeout=2)
+            lines = out.decode().splitlines()
+            for line in lines:
+                if line.strip():
+                    return line.strip()
+        except Exception:
+            pass
+
+        # 5) Sysfs /sys/class/drm card vendor sniffing (works in many Linux hosts)
+        try:
+            for path in glob.glob("/sys/class/drm/card*/device/vendor"):
+                try:
+                    vendor = Path(path).read_text().strip().lower()
+                    # NVIDIA vendor id is 0x10de, AMD is 0x1002
+                    if "0x10de" in vendor:
+                        return "NVIDIA (PCI)"
+                    if "0x1002" in vendor:
+                        return "AMD (PCI)"
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
+        # 6) Command fallbacks: nvidia-smi then lspci
+        try:
+            out = subprocess.check_output(["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"], stderr=subprocess.DEVNULL, timeout=2)
+            name = out.decode().splitlines()[0].strip()
+            if name:
+                return name
+        except Exception:
+            pass
+
+        try:
+            out = subprocess.check_output(["lspci"], stderr=subprocess.DEVNULL, timeout=2)
+            for line in out.decode().splitlines():
+                if "vga" in line.lower() or "3d controller" in line.lower() or "display controller" in line.lower():
+                    return line.split(':', 1)[1].strip()
+        except Exception:
+            pass
+
+        return "unknown"
+
+    gpu_name = detect_gpu()
     model_name = MODEL
     processor = "unknown"
     worker_status = "online"
+
+    def trim_gpu_name(raw: str) -> str:
+        """Return a short vendor+model string for display."""
+        if not raw:
+            return "unknown"
+        s = raw.strip()
+        if s.lower() == "unknown":
+            return "unknown"
+
+        # Prefer bracketed model names like '... [GeForce RTX 2080]'
+        import re
+        import subprocess
+
+        m = re.search(r"\[(.*?)\]", s)
+        if m:
+            return m.group(1).strip()
+
+        # If the value only indicates PCI/vendor, try lspci for a richer description.
+        if "pci" in s.lower() or any(k in s for k in ("AMD", "NVIDIA", "Intel", "RADEON", "GEFORCE")):
+            try:
+                out = subprocess.check_output(["lspci", "-nn"], stderr=subprocess.DEVNULL, timeout=2)
+                text = out.decode(errors="ignore")
+                # Prefer lines that mention known vendors and include model text.
+                for line in text.splitlines():
+                    low = line.lower()
+                    if "advanced micro devices" in low or "amd" in low or "nvidia" in low or "geforce" in low or "radeon" in low:
+                        # Extract description after the first colon
+                        if ":" in line:
+                            desc = line.split(":", 1)[1].strip()
+                            desc = re.sub(r"\s+", " ", re.sub(r"[\(\)]", "", desc))
+                            return desc
+                # As a last resort, return the first VGA/3D line description
+                for line in text.splitlines():
+                    low = line.lower()
+                    if "vga compatible controller" in low or "3d controller" in low or "display controller" in low:
+                        if ":" in line:
+                            return line.split(":", 1)[1].strip()
+            except Exception:
+                pass
+
+        # Look for common vendors and return vendor + following tokens
+        vendors = ["NVIDIA", "AMD", "INTEL", "GEFORCE", "RADEON", "TESLA"]
+        lower = s.lower()
+        for v in vendors:
+            if v.lower() in lower:
+                # Extract from vendor occurrence to end, remove 'Corporation' and excess punctuation
+                idx = lower.index(v.lower())
+                part = s[idx:]
+                part = re.sub(r"Corporation", "", part, flags=re.I)
+                part = re.sub(r"\s+", " ", part)
+                part = re.sub(r"[,\(\)]", "", part)
+                return part.strip()
+
+        # Fallback: return first three words of the string
+        parts = s.split()
+        return " ".join(parts[:3]) if len(parts) >= 3 else s
 
     try:
         # Ollama ps exposes loaded model metadata and processor mode.
@@ -421,6 +551,15 @@ def get_system_status():
             first = models[0]
             model_name = first.get("name", MODEL)
             processor = first.get("processor", "unknown")
+            # If Ollama doesn't report processor, infer from detected GPU or common hints.
+            if not processor or processor == "unknown":
+                # Look for other possible keys that may indicate device
+                processor_hint = first.get("device") or first.get("processor_type") or first.get("host_processor")
+                if processor_hint:
+                    processor = processor_hint
+                else:
+                    # If a GPU is present on the host, assume the model will use GPU; otherwise CPU.
+                    processor = "gpu" if gpu_name and gpu_name != "unknown" else "cpu"
         else:
             # API reachable but no active model loaded yet.
             processor = "idle"
@@ -432,6 +571,7 @@ def get_system_status():
     return JSONResponse(
         content={
             "gpu": gpu_name,
+            "gpu_short": trim_gpu_name(gpu_name),
             "model": model_name,
             "processor": processor,
             "worker": worker_status,

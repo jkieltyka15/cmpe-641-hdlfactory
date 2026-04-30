@@ -1,8 +1,8 @@
 <!--
   HDLFACTORY single-page UI.
-  - Create Job tab submits prompt + benchmark to backend.
-  - Job History tab shows past runs and expandable logs.
-  - System status panel reflects queue/model/processor health.
+  - Create Job tab submits a prompt + benchmark and runs generation/validation.
+  - Job History tab shows past runs, logs, draft/final downloads, and delete actions.
+  - System status panel reflects queue, model, GPU, and processor health.
 -->
 <!DOCTYPE html>
 <html lang="en">
@@ -204,16 +204,20 @@
       font-weight: 700;
       cursor: pointer;
       transition: all 0.2s ease;
+      box-shadow: none;
     }
 
     .nav-tab:hover {
       background: rgba(255,255,255,0.08);
+      box-shadow: none;
+      filter: none;
     }
 
     .nav-tab.active {
       background: linear-gradient(135deg, #ffb81c, #e0a000);
       color: black;
       border-color: transparent;
+      box-shadow: 0 12px 28px rgba(255, 184, 28, 0.28);
     }
 
     .page {
@@ -336,6 +340,19 @@
       box-shadow: none;
     }
 
+    .draft-btn {
+      background: rgba(255, 184, 28, 0.10);
+      color: #ffd76a;
+      border: 1px solid rgba(255, 184, 28, 0.30);
+      box-shadow: none;
+    }
+
+    .draft-btn:hover {
+      background: rgba(255, 184, 28, 0.16);
+      box-shadow: none;
+      filter: none;
+    }
+
     .helper {
       font-size: 13px;
       color: var(--muted);
@@ -446,16 +463,16 @@
           <p class="brand-subtitle">University of Maryland, Baltimore County</p>
         </div>
       </div>
-      <div class="topbar-badge">GPU-accelerated validation</div>
+      <div class="topbar-badge">Prompt-to-Verilog pipeline</div>
     </div>
 
     <!-- Product overview copy -->
     <div class="hero">
-      <div class="eyebrow">AI-assisted HDL generation</div>
+      <div class="eyebrow">AI-assisted Verilog generation</div>
       <h1>Generate, validate, and download Verilog</h1>
       <p class="subtitle">
-        HDLFACTORY uses Mistral-7B to generate Verilog from natural language, validates the output with Verilator,
-        and returns a downloadable design when the benchmark passes.
+        HDLFACTORY accepts a prompt and benchmark testbench, generates Verilog in staged steps, runs validation,
+        and exposes draft and final verilog designs when they are available.
       </p>
     </div>
 
@@ -507,7 +524,7 @@
           <button class="danger-btn" type="button" onclick="clearHistory()">Delete All</button>
         </div>
         <p class="section-copy">
-          Review recent HDLFACTORY runs, inspect summaries, and download generated Verilog from successful jobs.
+          Review recent HDLFACTORY runs, inspect summaries and logs, download final or draft Verilog, or delete entries from history.
         </p>
         <div id="historyList" class="history-list">
           <div class="helper">No jobs loaded yet.</div>
@@ -573,7 +590,7 @@
 
         document.getElementById("systemStatus").innerHTML = `
           <div class="helper-row">
-            <div class="helper-pill"><strong>GPU:</strong> ${escapeHtml(data.gpu)}</div>
+            <div class="helper-pill"><strong>GPU:</strong> ${escapeHtml(data.gpu_short || data.gpu)}</div>
             <div class="helper-pill"><strong>Model:</strong> ${escapeHtml(data.model)}</div>
             <div class="helper-pill"><strong>Processor:</strong> ${escapeHtml(data.processor)}</div>
             <div class="helper-pill"><strong>Worker:</strong> ${escapeHtml(data.worker)}</div>
@@ -708,10 +725,10 @@
       }
 
       if (data.stageA_download_url) {
-        html += `<br><br><a class="secondary-btn" href="${API_BASE}${data.stageA_download_url}">Download Stage A Draft</a>`;
+        html += `<br><br><a class="button-link draft-btn" href="${API_BASE}${data.stageA_download_url}">Download Draft</a>`;
       }
 
-      html += `<br><br><button onclick="loadLogs('${data.job_id}')">View Logs</button>`;
+      html += `<br><br><button class="secondary-btn" onclick="loadLogs('${data.job_id}')">Logs</button>`;
       html += `<div id="logs"></div>`;
 
       result.innerHTML = html;
@@ -755,7 +772,7 @@
           <div class="helper">${escapeHtml(j.created_at || "")}</div>
           <div class="actions" style="margin-top:12px;">
           ${j.download_url ? `<a class="button-link" href="${API_BASE}${j.download_url}">Download Final</a>` : ""}
-          ${j.stageA_download_url ? `<a class="secondary-btn" href="${API_BASE}${j.stageA_download_url}">Stage A Draft</a>` : ""}
+          ${j.stageA_download_url ? `<a class="button-link draft-btn" href="${API_BASE}${j.stageA_download_url}">Download Draft</a>` : ""}
           <button class="secondary-btn" onclick="loadHistoryLogs('${j.job_id}', this)">Logs</button>
           <button class="danger-btn" type="button" onclick="deleteHistoryJob('${j.job_id}')">Delete</button>
           </div>
