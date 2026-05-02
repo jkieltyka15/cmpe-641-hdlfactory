@@ -286,12 +286,26 @@ The worker implements a five-stage pipeline:
 ### Stage 3: Optimization (Codestral-22B)
 - Codestral-22B reads `stageA.v` and produces optimized Verilog
 - Optimization targets area and power reduction while preserving behavior
+- **Interface Preservation**: The optimization prompt explicitly constrains the model to:
+  - NOT change module ports (inputs, outputs, bit widths)
+  - NOT alter functional behavior or port semantics
+  - Return input unchanged if optimization is uncertain
+- **Port Validation**: The generated optimized code is validated to ensure:
+  - All output ports match the original in name and bit width
+  - Port structure is identical to Stage A
+  - If port structure differs, optimization is rejected
 - Result written to `optimized.v`
 
 ### Stage 4: Optimized Design Validation (Verilator)
 - Verilator compiles and simulates `optimized.v` against the uploaded testbench
-- If testbench fails, job terminates (Stage A draft is still available for download)
-- If testbench passes, proceeds to final validation
+- If testbench **passes**: proceeds to final validation with Stage 5
+- If testbench **fails**: 
+  - Automatically falls back to Stage A (`stageA.v`) as the final design
+  - Re-runs simulation with Stage A to confirm it passes
+  - If Stage A fallback also fails (unexpected): job terminates with error
+  - If Stage A fallback passes: continues to Stage 5 with Stage A instead
+  - Either way, users receive a working design or a clear error message
+- Stage A draft is always available for download, regardless of optimization outcome
 
 ### Stage 5: Final Validation (Icarus Verilog)
 - Icarus Verilog runs simulation as final compliance check against the uploaded testbench
@@ -405,6 +419,16 @@ If Ollama fails to download models:
 - Review detailed logs via the UI (Logs tab) or API (`GET /logs/{job_id}`)
 - Stage A logs appear after Step 2; optimized design logs after Step 4
 - Icarus Verilog logs appear after Step 5
+
+### Optimization Failures (Step 4)
+
+If the optimized design fails the testbench:
+- The system automatically falls back to using Stage A as the final design
+- This fallback is **transparent** — users see "Step 4 of 5: Optimized design failed, falling back to Stage A..."
+- If Stage A passes (as expected), the job completes successfully
+- The final downloadable design (`<module_name>.v`) will be the Stage A version
+- This safety mechanism ensures users always receive a working design when possible
+- Check `opt_stdout.log` and `opt_stderr.log` in the job directory to see why optimization failed
 
 ### Redis Queue Backlog
 

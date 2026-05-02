@@ -395,9 +395,15 @@ def process_job(job):
 
             optimize_prompt = f"""You are an HDL optimizer model.
 
+CRITICAL CONSTRAINTS:
+- The module interface (inputs, outputs, bit widths) MUST NOT CHANGE.
+- The module must produce IDENTICAL outputs for all possible inputs.
+- Do NOT simplify logic in ways that change port bit assignments or semantics.
+- If unsure about optimization, return the input unchanged.
+
 Task:
 Optimize the following Verilog for physical size and power while preserving
-its functional behavior. Output ONLY Verilog code (no markdown or commentary).
+its EXACT functional behavior. Output ONLY Verilog code (no markdown or commentary).
 
 Input Verilog:
 {stageA_text}
@@ -426,6 +432,36 @@ Input Verilog:
                 )
                 return
 
+            # Validate that optimized version has the same port structure as original
+            # Extract output port declarations from both versions to verify bit widths
+            def extract_port_widths(verilog_text):
+                """Extract output port names and their bit widths."""
+                ports = {}
+                # Match output declarations like: output wire [31:0] sum
+                for match in re.finditer(r'output\s+(?:reg|wire)?\s*(?:\[(\d+):(\d+)\])?\s+(\w+)', verilog_text):
+                    high, low, name = match.groups()
+                    if high and low:
+                        width = int(high) - int(low) + 1
+                    else:
+                        width = 1  # 1-bit wire if no brackets
+                    ports[name] = width
+                return ports
+            
+            stageA_ports = extract_port_widths(stageA_text)
+            opt_ports = extract_port_widths(optimized_text)
+            
+            if stageA_ports != opt_ports:
+                # Port mismatch: optimization changed interface
+                port_mismatch = f"Original: {stageA_ports}, Optimized: {opt_ports}"
+                codestral_stderr.write_text(f"Port interface changed: {port_mismatch}", encoding="utf-8")
+                update_job(
+                    job_id,
+                    0,
+                    "Step 3 of 5: Optimized design changed the port interface (rejected).",
+                    "failed",
+                )
+                return
+
             # Prepend timescale to optimized code to match testbench
             timescale = get_testbench_timescale(job_dir)
             optimized_with_timescale = f"{timescale}\n\n{optimized_text}"
@@ -449,15 +485,33 @@ Input Verilog:
         (job_dir / "opt_stdout.log").write_text(opt_result.stdout, encoding="utf-8")
         (job_dir / "opt_stderr.log").write_text(opt_result.stderr, encoding="utf-8")
 
-        if not test_passed(opt_result.stdout, opt_result.stderr):
-            summary = summarize_result(opt_result.stdout, opt_result.stderr, opt_result.returncode)
+        opt_success = test_passed(opt_result.stdout, opt_result.stderr)
+        
+        # If optimization failed, fall back to using Stage A for final output
+        if not opt_success:
+            opt_summary = summarize_result(opt_result.stdout, opt_result.stderr, opt_result.returncode)
             update_job(
                 job_id,
-                0,
-                f"Step 4 of 5: Optimized design failed: {summary}",
-                "failed",
+                None,
+                "Step 4 of 5: Optimized design failed, falling back to Stage A...",
+                "simulating_optimized",
             )
-            return
+            # Use Stage A as the final design instead
+            shutil.copyfile(stageA_path, job_dir / "optimized.v")
+            opt_result = run_benchmark(job_dir, source_file="optimized.v")
+            (job_dir / "opt_stdout.log").write_text(opt_result.stdout, encoding="utf-8")
+            (job_dir / "opt_stderr.log").write_text(opt_result.stderr, encoding="utf-8")
+            opt_success = test_passed(opt_result.stdout, opt_result.stderr)
+            
+            if not opt_success:
+                opt_summary = summarize_result(opt_result.stdout, opt_result.stderr, opt_result.returncode)
+                update_job(
+                    job_id,
+                    0,
+                    f"Step 4 of 5: Even Stage A fallback failed (unexpected): {opt_summary}",
+                    "failed",
+                )
+                return
 
         # Stage 5: final testing with Icarus Verilog for benchmarking.
         update_job(
