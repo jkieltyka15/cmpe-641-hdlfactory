@@ -1,0 +1,65 @@
+Generate a synthesizable Verilog-2001 module named adder32.
+
+Return only the Verilog code. Do not include markdown, explanation, comments, or a testbench.
+
+Critical file-format requirement:
+- The first line of the file must be exactly:
+
+`timescale 1ns/1ps
+
+- The module declaration must start after the timescale directive.
+- Do not put anything before the timescale directive.
+- Do not omit the backtick character before timescale.
+- Use a Verilog backtick `, not an apostrophe '.
+
+Use exactly this module declaration:
+
+module adder32 (
+    input  wire [31:0] a,
+    input  wire [31:0] b,
+    input  wire        cin,
+    output wire [31:0] sum,
+    output wire        cout
+);
+
+Port descriptions:
+- a is a 32-bit unsigned input operand. It is the first value being added.
+- b is a 32-bit unsigned input operand. It is the second value being added.
+- cin is a 1-bit carry-in input. If cin is 1, add one extra bit to the result. If cin is 0, add nothing extra.
+- sum is a 32-bit output containing the lower 32 bits of the result.
+- cout is a 1-bit carry-out output containing bit 32 of the full result. It becomes 1 when the addition produces a carry beyond bit 31.
+
+Required behavior:
+- Compute the full 33-bit unsigned result of a + b + cin.
+- Assign the lower 32 bits of that result to sum.
+- Assign the upper carry bit of that result to cout.
+
+Implementation rules:
+- Use plain Verilog-2001 only.
+- Make the design purely combinational.
+- Use an internal wire named result declared exactly as:
+
+wire [32:0] result;
+
+- Compute result using exactly this assignment:
+
+assign result = {1'b0, a} + {1'b0, b} + {32'b0, cin};
+
+- Assign sum using exactly this assignment:
+
+assign sum = result[31:0];
+
+- Assign cout using exactly this assignment:
+
+assign cout = result[32];
+
+Restrictions:
+- Do not include simulation-only code.
+- Do not include $display, $finish, delays, clock, or reset.
+
+Before returning the final code, verify:
+1. The first line is exactly `timescale 1ns/1ps
+2. The second nonblank line begins with module adder32.
+3. The internal result signal is wire [32:0].
+4. No bit index above 32 is used.
+5. The module has no testbench code.
