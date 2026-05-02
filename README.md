@@ -274,10 +274,12 @@ The worker implements a five-stage pipeline:
 - Ministral-3 (3B) produces synthesizable Verilog code
 - Output is cleaned (markdown stripped) and written to `stageA.v`
 - Generated module name is extracted and stored in metadata
+- **Timescale matching**: Testbench timescale is automatically prepended to all generated code to ensure Verilator compatibility
 
 ### Stage 2: Stage A Validation (Verilator)
 - Verilator compiles `stageA.v` against the uploaded testbench file
-- Testbench filename and module name are read from metadata
+- Testbench filename, module name, and timescale are read from metadata
+- The generated code has the testbench timescale prepended internally for compilation
 - If compilation or simulation fails, job terminates with error
 - If testbench passes, proceeds to optimization
 
@@ -333,6 +335,7 @@ The `testbench_metadata.json` file (in each job directory) stores:
 {
   "testbench_file": "<uploaded_filename>",
   "testbench_module": "<module_name_from_testbench>",
+  "testbench_timescale": "`timescale 1ns/1ps",
   "generated_module": "<module_name_from_generated_code>"
 }
 ```
@@ -341,6 +344,16 @@ This metadata enables:
 - Support for testbenches with any filename (not hardcoded to `benchmark_tb.v`)
 - Dynamic compilation commands with correct module names
 - Download filenames based on module names (`<module_name>_draft.v` and `<module_name>.v`)
+- Automatic timescale extraction from testbench and application to generated code
+
+### Timescale Handling
+
+The system automatically:
+1. **Extracts** the timescale directive from the uploaded testbench (e.g., `` `timescale 1ns/1ps ``)
+2. **Prepends** this timescale to all generated and optimized Verilog code during compilation to ensure consistency and prevent Verilator warnings
+3. **Strips** the timescale from downloaded files so users receive clean Verilog without compilation directives
+
+This ensures that Verilator recognizes all modules in the design hierarchy as having compatible timescales, eliminating IEEE 1800-2023 compliance warnings.
 
 ## Development & Troubleshooting
 

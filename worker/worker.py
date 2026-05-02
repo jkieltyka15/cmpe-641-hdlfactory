@@ -95,6 +95,34 @@ def get_testbench_info(job_dir: Path) -> tuple[str, str]:
     return ("benchmark_tb.v", "benchmark_tb")
 
 
+def get_testbench_timescale(job_dir: Path) -> str:
+    """Get testbench timescale from job metadata.
+
+    Returns:
+        Timescale directive (e.g., "`timescale 1ns/1ps").
+        Falls back to default if not found.
+    """
+    metadata_path = job_dir / "testbench_metadata.json"
+    
+    if metadata_path.exists():
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            return metadata.get("testbench_timescale", "`timescale 1ns/1ps")
+        except (json.JSONDecodeError, KeyError):
+            pass
+    
+    return "`timescale 1ns/1ps"
+
+
+def strip_timescale_from_verilog(content: str) -> str:
+    """Remove timescale directive from Verilog code.
+    
+    Returns the content without the timescale line.
+    """
+    # Remove the entire line starting with `timescale
+    return re.sub(r'^\s*`timescale\s+[^\s]+/[^\s]+\s*\n', '', content, flags=re.MULTILINE)
+
+
 def generate_verilog(prompt: str) -> str:
     """Request Verilog from Ollama using a constrained generation prompt."""
     # Wrap the user task with strict output constraints so downstream tooling
@@ -130,10 +158,21 @@ Rules:
     return clean_verilog(data["response"])
 
 
+def test_passed(stdout: str, stderr: str = "") -> bool:
+    """Check if testbench output indicates a passing test.
+    
+    Returns True if output contains a pass marker ("TEST PASSED" or "PASS:") 
+    and no fail marker ("FAIL" or "ERROR").
+    """
+    has_pass_marker = "TEST PASSED" in stdout or "PASS:" in stdout
+    has_fail_marker = "FAIL" in stdout or "ERROR" in stdout
+    return has_pass_marker and not has_fail_marker
+
+
 def summarize_result(stdout: str, stderr: str, returncode: int) -> str:
     """Generate a concise status summary suitable for UI display."""
     # Success requires both zero exit code and explicit benchmark pass marker.
-    if returncode == 0 and "TEST PASSED" in stdout:
+    if returncode == 0 and test_passed(stdout, stderr):
         return "Generated Verilog passed the benchmark."
 
     # Prefer explicit syntax diagnostics when available.
@@ -272,12 +311,20 @@ def process_job(job):
         )
 
         verilog_text = generate_verilog(prompt)
-        # Persist the raw stage A draft so users can always download it.
+        
+        # Get testbench timescale and prepend it to generated code
+        timescale = get_testbench_timescale(job_dir)
+        verilog_with_timescale = f"{timescale}\n\n{verilog_text}"
+        
+        # Store versions with and without timescale
+        # Internal compilation files get timescale
         stageA_path = job_dir / "stageA.v"
-        stageA_path.write_text(verilog_text + "\n", encoding="utf-8")
-        # Stage A benchmark flow still expects `generated.v`; write the same
-        # draft there before running Verilator so existing compile commands work.
-        generated_path.write_text(verilog_text + "\n", encoding="utf-8")
+        stageA_path.write_text(verilog_with_timescale + "\n", encoding="utf-8")
+        # Stage A benchmark flow still expects `generated.v`; write with timescale
+        generated_path.write_text(verilog_with_timescale + "\n", encoding="utf-8")
+        # Store clean version (no timescale) for later download processing
+        clean_verilog_path = job_dir / ".verilog_clean"
+        clean_verilog_path.write_text(verilog_text + "\n", encoding="utf-8")
 
         # Extract the generated module name and store in metadata for downloads
         generated_module = None
@@ -314,7 +361,7 @@ def process_job(job):
         (job_dir / "stdout.log").write_text(result.stdout, encoding="utf-8")
         (job_dir / "stderr.log").write_text(result.stderr, encoding="utf-8")
 
-        stageA_success = "TEST PASSED" in result.stdout and "FAIL" not in result.stdout
+        stageA_success = test_passed(result.stdout, result.stderr)
         stageA_summary = summarize_result(result.stdout, result.stderr, result.returncode)
 
         if not stageA_success:
@@ -379,7 +426,10 @@ Input Verilog:
                 )
                 return
 
-            optimized_path.write_text(optimized_text + "\n", encoding="utf-8")
+            # Prepend timescale to optimized code to match testbench
+            timescale = get_testbench_timescale(job_dir)
+            optimized_with_timescale = f"{timescale}\n\n{optimized_text}"
+            optimized_path.write_text(optimized_with_timescale + "\n", encoding="utf-8")
         except Exception as e:
             # Record Ollama optimization failures as terminal for Stage B.
             codestral_stderr.write_text(str(e), encoding="utf-8")
@@ -399,7 +449,7 @@ Input Verilog:
         (job_dir / "opt_stdout.log").write_text(opt_result.stdout, encoding="utf-8")
         (job_dir / "opt_stderr.log").write_text(opt_result.stderr, encoding="utf-8")
 
-        if "TEST PASSED" not in opt_result.stdout or "FAIL" in opt_result.stdout:
+        if not test_passed(opt_result.stdout, opt_result.stderr):
             summary = summarize_result(opt_result.stdout, opt_result.stderr, opt_result.returncode)
             update_job(
                 job_id,
@@ -429,7 +479,7 @@ Input Verilog:
         (job_dir / "icarus_stdout.log").write_text(icarus_result.stdout, encoding="utf-8")
         (job_dir / "icarus_stderr.log").write_text(icarus_result.stderr, encoding="utf-8")
 
-        if "TEST PASSED" not in icarus_result.stdout or "FAIL" in icarus_result.stdout:
+        if not test_passed(icarus_result.stdout, icarus_result.stderr):
             summary = summarize_result(icarus_result.stdout, icarus_result.stderr, icarus_result.returncode)
             update_job(
                 job_id,

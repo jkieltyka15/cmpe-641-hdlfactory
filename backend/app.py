@@ -22,7 +22,7 @@ import redis
 import requests
 from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 
 app = FastAPI()
 
@@ -185,6 +185,28 @@ def extract_verilog_module_name(content: str) -> str | None:
     return None
 
 
+def extract_verilog_timescale(content: str) -> str | None:
+    """Extract the timescale directive from Verilog source code.
+
+    Returns the full timescale directive (e.g., "`timescale 1ns/1ps") or None.
+    """
+    # Match `timescale directive - captures the whole line including the directive
+    match = re.search(r'`timescale\s+([^\s]+)/([^\s]+)', content)
+    if match:
+        # Return the full timescale line as it appears
+        return f"`timescale {match.group(1)}/{match.group(2)}"
+    return None
+
+
+def strip_timescale_from_verilog(content: str) -> str:
+    """Remove timescale directive from Verilog code.
+    
+    Returns the content without the timescale line.
+    """
+    # Remove the entire line starting with `timescale
+    return re.sub(r'^\s*`timescale\s+[^\s]+/[^\s]+\s*\n', '', content, flags=re.MULTILINE)
+
+
 init_db()
 
 
@@ -212,10 +234,11 @@ async def generate(
         # Persist original request inputs for reproducibility/debugging.
         prompt_path.write_text(prompt, encoding="utf-8")
 
-        # Read testbench content to extract module name
+        # Read testbench content to extract module name and timescale
         benchmark_content = await benchmark_file.read()
         benchmark_text = benchmark_content.decode('utf-8', errors='replace')
         module_name = extract_verilog_module_name(benchmark_text)
+        timescale = extract_verilog_timescale(benchmark_text)
 
         # Use original filename or sanitized module name if extraction fails
         if benchmark_file.filename:
@@ -234,6 +257,7 @@ async def generate(
         metadata = {
             "testbench_file": benchmark_filename,
             "testbench_module": module_name or "benchmark_tb",
+            "testbench_timescale": timescale or "`timescale 1ns/1ps",  # Default if not found
         }
         metadata_path = job_dir / "testbench_metadata.json"
         metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
@@ -363,10 +387,14 @@ def download_generated_file(job_id: str, stage: str | None = None):
     if not file_path.exists():
         return JSONResponse(status_code=404, content={"error": "File not found"})
 
-    return FileResponse(
-        path=file_path,
-        filename=download_name,
+    # Read the file and strip timescale for user download
+    content = file_path.read_text(encoding="utf-8")
+    content_without_timescale = strip_timescale_from_verilog(content)
+
+    return Response(
+        content=content_without_timescale,
         media_type="text/plain",
+        headers={"Content-Disposition": f"attachment; filename={download_name}"},
     )
 
 
