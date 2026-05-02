@@ -451,8 +451,21 @@ def get_history():
             "status": status,
             "created_at": created_at,
         }
-        # Always offer Stage A draft when present for debugging and access.
+        
+        # Extract module name from metadata for easy identification
         job_dir = JOBS_DIR / job_id
+        metadata_path = job_dir / "testbench_metadata.json"
+        if metadata_path.exists():
+            try:
+                metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+                # Prefer generated_module (from final design), fall back to testbench_module
+                job["module_name"] = metadata.get("generated_module") or metadata.get("testbench_module")
+            except (json.JSONDecodeError, IOError):
+                job["module_name"] = None
+        else:
+            job["module_name"] = None
+        
+        # Always offer Stage A draft when present for debugging and access.
         if (job_dir / "stageA.v").exists():
             job["stageA_download_url"] = f"/download/{job_id}?stage=stageA"
 

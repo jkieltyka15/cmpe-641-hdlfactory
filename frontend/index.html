@@ -826,7 +826,8 @@
 
       list.innerHTML = data.jobs.map(j => `
         <div class="job">
-          <div><b>${escapeHtml(j.job_id)}</b></div>
+          <div><b>${escapeHtml(j.module_name || j.job_id)}</b></div>
+          <div class="helper" style="font-size: 0.85em;">${escapeHtml(j.job_id)}</div>
           <div class="${j.success === true ? 'success' : (j.success === false ? 'fail' : '')}">
             ${escapeHtml(String(j.status).toUpperCase())}
           </div>
