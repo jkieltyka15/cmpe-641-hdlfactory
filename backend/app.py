@@ -8,6 +8,7 @@ Responsibilities:
 """
 
 import json
+import re
 import shutil
 import sqlite3
 import uuid
@@ -171,6 +172,19 @@ def read_logs(job_id: str) -> tuple[str, str]:
     return stdout, stderr
 
 
+def extract_verilog_module_name(content: str) -> str | None:
+    """Extract the top-level module name from Verilog source code.
+
+    Searches for the first module declaration and extracts its name.
+    Returns None if no module is found.
+    """
+    # Match 'module' keyword followed by optional whitespace and the module name
+    match = re.search(r'module\s+([a-zA-Z_][a-zA-Z0-9_]*)', content)
+    if match:
+        return match.group(1)
+    return None
+
+
 init_db()
 
 
@@ -193,14 +207,36 @@ async def generate(
 
     # Worker reads these files from the shared jobs volume.
     prompt_path = job_dir / "prompt.txt"
-    benchmark_path = job_dir / "benchmark_tb.v"
 
     try:
         # Persist original request inputs for reproducibility/debugging.
         prompt_path.write_text(prompt, encoding="utf-8")
 
-        with benchmark_path.open("wb") as f:
-            shutil.copyfileobj(benchmark_file.file, f)
+        # Read testbench content to extract module name
+        benchmark_content = await benchmark_file.read()
+        benchmark_text = benchmark_content.decode('utf-8', errors='replace')
+        module_name = extract_verilog_module_name(benchmark_text)
+
+        # Use original filename or sanitized module name if extraction fails
+        if benchmark_file.filename:
+            benchmark_filename = benchmark_file.filename
+        elif module_name:
+            benchmark_filename = f"{module_name}.v"
+        else:
+            benchmark_filename = "benchmark.v"
+
+        benchmark_path = job_dir / benchmark_filename
+
+        # Write testbench file
+        benchmark_path.write_bytes(benchmark_content)
+
+        # Store testbench metadata for worker to use
+        metadata = {
+            "testbench_file": benchmark_filename,
+            "testbench_module": module_name or "benchmark_tb",
+        }
+        metadata_path = job_dir / "testbench_metadata.json"
+        metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
 
         update_job(
             job_id,
@@ -284,7 +320,11 @@ def download_generated_file(job_id: str, stage: str | None = None):
     """Serve generated artifacts for a job.
 
     Query parameter `stage` may be `stageA` to retrieve the initial draft, or
-    omitted to return the final `generated.v` artifact.
+    omitted to return the final optimized artifact.
+    
+    Files are served with names based on their module names:
+    - Draft: <module_name>_draft.v
+    - Final: <module_name>.v
     """
     job_dir = JOBS_DIR / job_id
     conn = sqlite3.connect(DB_PATH)
@@ -297,12 +337,27 @@ def download_generated_file(job_id: str, stage: str | None = None):
     if not row:
         return JSONResponse(status_code=404, content={"error": "Job not found"})
 
+    # Try to get module name from metadata for the download filename
+    generated_module = None
+    metadata_path = job_dir / "testbench_metadata.json"
+    if metadata_path.exists():
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            if "generated_module" in metadata:
+                generated_module = metadata["generated_module"]
+        except (json.JSONDecodeError, IOError):
+            pass
+
     if stage == "stageA":
+        # Draft file
         file_path = job_dir / "stageA.v"
-        download_name = "stageA.v"
+        # Use module-based name if available, otherwise fall back to generic name
+        download_name = f"{generated_module}_draft.v" if generated_module else "stageA.v"
     else:
+        # Final file
         file_path = job_dir / "generated.v"
-        download_name = "generated.v"
+        # Use module-based name if available, otherwise fall back to generic name
+        download_name = f"{generated_module}.v" if generated_module else "generated.v"
 
     # File may be absent if job failed or has not finished yet.
     if not file_path.exists():

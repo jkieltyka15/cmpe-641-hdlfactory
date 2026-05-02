@@ -100,6 +100,8 @@ HDLFACTORY is an end-to-end system for generating synthesizable Verilog hardware
    - Go to the **Create Job** tab
    - Write a natural language prompt describing the hardware design you want
    - Upload a benchmark testbench file (Verilog)
+     - The testbench can be named anything (e.g., `my_test.v`, `adder32_tb.v`, etc.)
+     - The module name inside the file must match the filename
    - Click **Generate**
 
 2. **Monitor progress:**
@@ -111,8 +113,9 @@ HDLFACTORY is an end-to-end system for generating synthesizable Verilog hardware
      5. **Running Icarus Verilog** – Final compliance check with Icarus
 
 3. **Download artifacts:**
-   - After successful completion, download the final optimized `generated.v`
-   - Or download the initial `stageA.v` draft anytime (even if final optimization failed)
+   - After successful completion, download the final optimized design as `<module_name>.v`
+   - Or download the initial draft anytime (even if final optimization failed) as `<module_name>_draft.v`
+   - For example, if the generated module is named `adder32`, downloads are `adder32.v` and `adder32_draft.v`
 
 4. **View history:**
    - **Job History** tab shows all past runs
@@ -174,6 +177,8 @@ curl http://localhost:8080/api/status/f47ac10b-58cc-4372-a567-0e02b2c3d479
 }
 ```
 
+Note: The actual downloaded filenames are based on the generated module name (e.g., `adder32.v` or `adder32_draft.v`).
+
 ### GET /logs/{job_id}
 
 **Retrieve simulation stdout and stderr.**
@@ -194,8 +199,9 @@ curl http://localhost:8080/api/history
 
 **Download generated Verilog artifacts.**
 
-- `?stage=stageA` – Initial draft (if available)
-- `?stage=final` (or omitted) – Final optimized version
+- `?stage=stageA` – Initial draft (if available), served as `<module_name>_draft.v`
+- `?stage=final` (or omitted) – Final optimized version, served as `<module_name>.v`
+- The actual filename is based on the generated module name for clarity
 
 ### DELETE /history/{job_id}
 
@@ -234,9 +240,10 @@ hdlfactory/
 │   └── jobs/                      # Job artifacts (shared with worker)
 │       └── {job_id}/              # Per-job directory
 │           ├── prompt.txt         # Original user request
-│           ├── benchmark_tb.v     # Uploaded testbench
-│           ├── stageA.v           # Initial generated design
-│           ├── generated.v        # Final optimized design
+	│           ├── <testbench_name>   # Uploaded testbench (any .v filename)
+	│           ├── testbench_metadata.json  # Testbench & generated module metadata
+	│           ├── stageA.v           # Initial generated design (internal)
+	│           ├── generated.v        # Final optimized design (internal)
 │           ├── optimized.v        # Intermediate optimization candidate
 │           ├── stdout.log         # Final simulation output
 │           ├── stderr.log         # Final simulation errors
@@ -266,9 +273,11 @@ The worker implements a five-stage pipeline:
 - Ollama generate endpoint receives the user prompt
 - Ministral-3 (3B) produces synthesizable Verilog code
 - Output is cleaned (markdown stripped) and written to `stageA.v`
+- Generated module name is extracted and stored in metadata
 
 ### Stage 2: Stage A Validation (Verilator)
-- Verilator compiles `stageA.v` against `benchmark_tb.v`
+- Verilator compiles `stageA.v` against the uploaded testbench file
+- Testbench filename and module name are read from metadata
 - If compilation or simulation fails, job terminates with error
 - If testbench passes, proceeds to optimization
 
@@ -278,13 +287,14 @@ The worker implements a five-stage pipeline:
 - Result written to `optimized.v`
 
 ### Stage 4: Optimized Design Validation (Verilator)
-- Verilator compiles and simulates `optimized.v` against benchmark
-- If testbench fails, job terminates (Stage A is still available for download)
+- Verilator compiles and simulates `optimized.v` against the uploaded testbench
+- If testbench fails, job terminates (Stage A draft is still available for download)
 - If testbench passes, proceeds to final validation
 
 ### Stage 5: Final Validation (Icarus Verilog)
-- Icarus Verilog runs simulation as final compliance check
-- Upon success, `optimized.v` is renamed to `generated.v` for public download
+- Icarus Verilog runs simulation as final compliance check against the uploaded testbench
+- Upon success, `optimized.v` is copied to `generated.v` for download
+- Downloads are served with dynamic filenames based on module name: `<module_name>.v` and `<module_name>_draft.v`
 - Consolidated logs written for frontend display
 
 If any stage fails, the job is marked as failed, but `stageA.v` remains available for debugging.
@@ -316,6 +326,21 @@ CREATE TABLE jobs (
   is_deleted INTEGER          -- Soft-delete flag (0: visible, 1: hidden)
 );
 ```
+
+The `testbench_metadata.json` file (in each job directory) stores:
+
+```json
+{
+  "testbench_file": "<uploaded_filename>",
+  "testbench_module": "<module_name_from_testbench>",
+  "generated_module": "<module_name_from_generated_code>"
+}
+```
+
+This metadata enables:
+- Support for testbenches with any filename (not hardcoded to `benchmark_tb.v`)
+- Dynamic compilation commands with correct module names
+- Download filenames based on module names (`<module_name>_draft.v` and `<module_name>.v`)
 
 ## Development & Troubleshooting
 

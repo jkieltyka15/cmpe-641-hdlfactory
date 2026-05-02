@@ -58,6 +58,43 @@ def clean_verilog(text: str) -> str:
     return text
 
 
+def get_testbench_info(job_dir: Path) -> tuple[str, str]:
+    """Get testbench filename and module name from job metadata.
+
+    Returns:
+        Tuple of (testbench_filename, testbench_module_name).
+        Falls back to defaults if metadata not found.
+    """
+    metadata_path = job_dir / "testbench_metadata.json"
+    
+    if metadata_path.exists():
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            return (
+                metadata.get("testbench_file", "benchmark_tb.v"),
+                metadata.get("testbench_module", "benchmark_tb"),
+            )
+        except (json.JSONDecodeError, KeyError):
+            pass
+    
+    # Fallback: look for any .v file in the job directory (except generated files)
+    for vfile in job_dir.glob("*.v"):
+        if vfile.name not in ["generated.v", "stageA.v", "optimized.v"]:
+            # Try to extract module name from the file
+            try:
+                content = vfile.read_text(encoding="utf-8")
+                match = re.search(r'module\s+([a-zA-Z_][a-zA-Z0-9_]*)', content)
+                if match:
+                    return (vfile.name, match.group(1))
+                else:
+                    return (vfile.name, "benchmark_tb")
+            except Exception:
+                pass
+    
+    # Ultimate fallback
+    return ("benchmark_tb.v", "benchmark_tb")
+
+
 def generate_verilog(prompt: str) -> str:
     """Request Verilog from Ollama using a constrained generation prompt."""
     # Wrap the user task with strict output constraints so downstream tooling
@@ -138,13 +175,16 @@ def update_job(job_id: str, success, summary: str, status: str):
 
 
 def run_benchmark(job_dir: Path, source_file: str = "generated.v"):
-    """Compile and run a Verilog source against benchmark_tb.v using Verilator.
+    """Compile and run a Verilog source against the testbench using Verilator.
 
     Args:
         job_dir: Job workspace containing HDL artifacts and benchmark testbench.
         source_file: Verilog file to compile (for example `generated.v` or
             `optimized.v`).
     """
+    # Get testbench filename and module name from metadata
+    testbench_file, testbench_module = get_testbench_info(job_dir)
+    
     # If the requested source file is missing (for example older worker runs
     # that didn't write `generated.v`), fall back to `stageA.v` when present.
     src_path = job_dir / source_file
@@ -178,11 +218,14 @@ def run_benchmark(job_dir: Path, source_file: str = "generated.v"):
     # Recompute source path after any fallback/copy adjustments.
     src_path = job_dir / source_file
 
+    # Derive the output executable name from the testbench module name
+    verilator_output = f"V{testbench_module}"
+
     # Build and execute in a single shell so relative paths resolve in job dir.
     cmd = [
         "bash",
         "-lc",
-        f"cd {job_dir} && verilator --binary --threads {MAX_THREADS} -j 0 --top-module benchmark_tb -Wno-fatal {source_file} benchmark_tb.v && ./obj_dir/Vbenchmark_tb",
+        f"cd {job_dir} && verilator --binary --threads {MAX_THREADS} -j 0 --top-module {testbench_module} -Wno-fatal {source_file} {testbench_file} && ./obj_dir/{verilator_output}",
     ]
     return subprocess.run(cmd, capture_output=True, text=True)
 
@@ -235,6 +278,25 @@ def process_job(job):
         # Stage A benchmark flow still expects `generated.v`; write the same
         # draft there before running Verilator so existing compile commands work.
         generated_path.write_text(verilog_text + "\n", encoding="utf-8")
+
+        # Extract the generated module name and store in metadata for downloads
+        generated_module = None
+        match = re.search(r'module\s+([a-zA-Z_][a-zA-Z0-9_]*)', verilog_text)
+        if match:
+            generated_module = match.group(1)
+            
+            # Update job metadata to track generated module name for downloads
+            metadata_path = job_dir / "testbench_metadata.json"
+            if metadata_path.exists():
+                try:
+                    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+                    metadata["generated_module"] = generated_module
+                    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+                except (json.JSONDecodeError, IOError):
+                    pass
+            else:
+                metadata = {"generated_module": generated_module}
+                metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
 
         # Diagnostic print helps confirm whether inference used CPU or GPU.
         detect_processor()
@@ -355,10 +417,13 @@ Input Verilog:
             "running_icarus",
         )
 
+        # Get testbench filename for Icarus command
+        testbench_file, _ = get_testbench_info(job_dir)
+
         icarus_cmd = [
             "bash",
             "-lc",
-            f"cd {job_dir} && iverilog -o sim_icarus.vvp optimized.v benchmark_tb.v && vvp sim_icarus.vvp",
+            f"cd {job_dir} && iverilog -o sim_icarus.vvp optimized.v {testbench_file} && vvp sim_icarus.vvp",
         ]
         icarus_result = subprocess.run(icarus_cmd, capture_output=True, text=True)
         (job_dir / "icarus_stdout.log").write_text(icarus_result.stdout, encoding="utf-8")
@@ -375,7 +440,7 @@ Input Verilog:
             return
 
         # All stages passed: write the optimized design as the canonical downloadable
-        # `generated.v` so frontend download links continue to work as before.
+        # artifact. Keep the internal name as `generated.v` for compatibility.
         final_path = job_dir / "generated.v"
         optimized_path.replace(final_path)
 
