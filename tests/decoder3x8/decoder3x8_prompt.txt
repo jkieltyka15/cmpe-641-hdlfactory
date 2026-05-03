@@ -1,0 +1,70 @@
+Generate a synthesizable Verilog-2001 module named decoder3x8.
+
+Return only the Verilog code. Do not include markdown, explanation, comments, or a testbench.
+
+Critical file-format requirement:
+- The first line of the file must be exactly:
+
+`timescale 1ns/1ps
+
+- The module declaration must start after the timescale directive.
+- Do not put anything before the timescale directive.
+- Do not omit the backtick character before timescale.
+- Use a Verilog backtick `, not an apostrophe '.
+
+Use exactly this module declaration:
+
+module decoder3x8 (
+    input  wire [2:0] in,
+    input  wire       en,
+    output wire [7:0] out
+);
+
+Port descriptions:
+- in is a 3-bit binary input value. It selects which one of the eight output bits should be asserted.
+- en is a 1-bit enable input. When en is 1, the decoder is active. When en is 0, all output bits must be 0.
+- out is an 8-bit one-hot output vector. When enabled, exactly one bit of out must be 1, based on the value of in.
+
+Required behavior:
+- When en is 0, out must equal 8'b00000000 for every value of in.
+- When en is 1 and in is 3'b000, out must equal 8'b00000001.
+- When en is 1 and in is 3'b001, out must equal 8'b00000010.
+- When en is 1 and in is 3'b010, out must equal 8'b00000100.
+- When en is 1 and in is 3'b011, out must equal 8'b00001000.
+- When en is 1 and in is 3'b100, out must equal 8'b00010000.
+- When en is 1 and in is 3'b101, out must equal 8'b00100000.
+- When en is 1 and in is 3'b110, out must equal 8'b01000000.
+- When en is 1 and in is 3'b111, out must equal 8'b10000000.
+
+Implementation rules:
+- Use plain Verilog-2001 only.
+- Make the design purely combinational.
+- Because out is declared as output wire, drive out with a continuous assign statement.
+- Do not use an always block.
+- Do not assign to out procedurally.
+- Do not declare out as reg.
+- Do not declare any internal reg.
+
+Use exactly this assignment to implement the decoder:
+
+assign out = en ? (8'b00000001 << in) : 8'b00000000;
+
+Restrictions:
+- Do not change the module name.
+- Do not change any port name.
+- Do not change any port width.
+- Do not change any port direction.
+- Do not include simulation-only code.
+- Do not include $display, $finish, delays, clock, or reset.
+- Do not include a testbench.
+- Do not include any extra modules.
+
+Before returning the final code, verify:
+1. The first line is exactly `timescale 1ns/1ps
+2. The second nonblank line begins with module decoder3x8.
+3. The module declaration exactly matches the requested signature.
+4. The output is 8 bits wide.
+5. The implementation uses this exact assignment: assign out = en ? (8'b00000001 << in) : 8'b00000000;
+6. No always block is used.
+7. No reg is declared.
+8. The module has no testbench code.

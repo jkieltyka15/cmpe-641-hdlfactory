@@ -1,0 +1,61 @@
+Generate a synthesizable Verilog-2001 module named mux4x16.
+
+Return only the Verilog code. Do not include markdown, explanation, comments, or a testbench.
+
+Critical file-format requirement:
+- The first line of the file must be exactly:
+
+`timescale 1ns/1ps
+
+- The module declaration must start after the timescale directive.
+- Do not put anything before the timescale directive.
+- Do not omit the backtick character before timescale.
+- Use a Verilog backtick `, not an apostrophe '.
+
+Use exactly this module declaration:
+
+module mux4x16 (
+    input  wire [15:0] in0,
+    input  wire [15:0] in1,
+    input  wire [15:0] in2,
+    input  wire [15:0] in3,
+    input  wire [1:0]  sel,
+    output wire [15:0] out
+);
+
+Port descriptions:
+- in0 is a 16-bit input data value. It is selected when sel is 2'b00.
+- in1 is a 16-bit input data value. It is selected when sel is 2'b01.
+- in2 is a 16-bit input data value. It is selected when sel is 2'b10.
+- in3 is a 16-bit input data value. It is selected when sel is 2'b11.
+- sel is a 2-bit select input. It chooses which one of the four 16-bit inputs appears on out.
+- out is a 16-bit output containing the selected input value.
+
+Required behavior:
+- When sel is 2'b00, out must equal in0.
+- When sel is 2'b01, out must equal in1.
+- When sel is 2'b10, out must equal in2.
+- When sel is 2'b11, out must equal in3.
+
+Implementation rules:
+- Use plain Verilog-2001 only.
+- Make the design purely combinational.
+- The mux may be implemented using a continuous assign statement, a combinational always block, or equivalent synthesizable Verilog.
+- Avoid inferred latches if using an always block.
+- Do not use SystemVerilog-only syntax.
+- Do not use a clock.
+- Do not use reset.
+
+Restrictions:
+- Do not include simulation-only code.
+- Do not include $display, $finish, delays, clock, or reset.
+- Do not include a testbench.
+
+Before returning the final code, verify:
+1. The first line is exactly `timescale 1ns/1ps
+2. The second nonblank line begins with module mux4x16.
+3. The module declaration exactly matches the requested signature.
+4. The output is 16 bits wide.
+5. Every valid sel value selects the correct input.
+6. The module is purely combinational.
+7. The module has no testbench code.
