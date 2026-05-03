@@ -48,6 +48,10 @@ env/
 htmlcov/
 *.log
 
+# Keep specific Synopsys flow logs under tests (allow these despite *.log)
+!tests/**/dc_out.log
+!tests/**/icc2_out.log
+
 # Runtime artifact folders (large, generated)
 backend/jobs/*
 !backend/jobs/.gitkeep
