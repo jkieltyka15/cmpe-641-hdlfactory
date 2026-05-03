@@ -1,0 +1,1047 @@
+Current time:       Sun May  3 19:00:51 2026
+Hostname:           cadence1.cs.umbc.edu
+CPU Model:          Intel(R) Xeon(R) Silver 4314 CPU @ 2.40GHz
+CPU Details:        Cores = 4 : Sockets = 7 : Cache Size = 24576 KB : Freq = 2.39 GHz
+OS:                 Linux 5.14.0-611.41.1.el9_7.x86_64
+RAM:                 15 GB (Free   6 GB)
+Swap:                 0 GB (Free   0 GB)
+Work Filesystem:    /afs mounted to AFS
+Tmp Filesystem:     /tmp mounted to tmpfs
+Work Disk:          2047 GB (Free 2047 GB)
+Tmp Disk:             7 GB (Free   7 GB)
+# unified_synopsys_flow.tcl
+# One-file DC + ICC2 lab flow, adapted from the uploaded practice/lab scripts.
+#
+# Recommended run method for the UMBC launch scripts: pass configuration as
+# environment variables. This avoids problems where launch_synopsys_* splits
+# Synopsys -x strings into separate positional arguments.
+#
+# DC example:
+#   env FLOW=dc RTL_FILE=verilog/adder32_draft.v TOP=adder32 CLK_PORT=clk CLK_PER=1.0 \
+#   /umbc/software/scripts/launch_synopsys_dc.sh \
+#     -f unified_synopsys_flow.tcl -o dc_out.log
+#
+# ICC2 example, after DC finishes:
+#   env FLOW=icc2 RTL_FILE=verilog/adder32_draft.v TOP=adder32 CLK_PORT=clk CLK_PER=1.0 \
+#   /umbc/software/scripts/launch_synopsys_icc2_shell.sh \
+#     -f unified_synopsys_flow.tcl -o icc2_out.log
+#
+# Optional argv style, if your launcher really preserves arguments after "--":
+#   ... -f unified_synopsys_flow.tcl -o dc_out.log -- -flow dc -rtl verilog/top.v -top top -clk clk -period 1.0
+################################################################################
+# Argument parsing / defaults
+################################################################################
+# Some Synopsys shells/launchers do not define argv when -f is used.
+if {![info exists argv]} { set argv {} }
+proc arg_value {flag default} {
+    global argv
+    set idx [lsearch -exact $argv $flag]
+    if {$idx >= 0 && [expr {$idx + 1}] < [llength $argv]} {
+        return [lindex $argv [expr {$idx + 1}]]
+    }
+    return $default
+}
+proc env_or_arg {varname flag default} {
+    global env
+    if {[uplevel #0 [list info exists $varname]]} {
+        return [uplevel #0 [list set $varname]]
+    }
+    if {[info exists env($varname)]} {
+        return $env($varname)
+    }
+    return [arg_value $flag $default]
+}
+proc arg_present {flag} {
+    global argv
+    return [expr {[lsearch -exact $argv $flag] >= 0}]
+}
+set IP [pwd]
+/afs/umbc.edu/users/j/k/jkielty1/home/cmpe-641/lab
+set FLOW     [env_or_arg FLOW     -flow   "auto"]
+dc
+set RTL_FILE [env_or_arg RTL_FILE -rtl    ""]
+verilog/alu32.v
+set TOP      [env_or_arg TOP      -top    ""]
+alu32
+set CLK_PORT [env_or_arg CLK_PORT -clk    "clk"]
+clk
+set CLK_PER  [env_or_arg CLK_PER  -period "1.0"]
+1.0
+# Positional fallback: first non-flag argument can be the RTL file.
+if {$RTL_FILE eq ""} {
+    foreach a $argv {
+        if {![string match -* $a]} {
+            set RTL_FILE $a
+            break
+        }
+    }
+}
+if {$RTL_FILE eq ""} {
+    puts "ERROR: Give the RTL file with -rtl ./path/to/file.v, or set RTL_FILE before sourcing."
+    exit 1
+}
+if {$TOP eq ""} {
+    set TOP [file rootname [file tail $RTL_FILE]]
+}
+set DESIGN $TOP
+alu32
+set top_mod $TOP
+alu32
+set RTL_SOURCE_FILES [list $RTL_FILE]
+verilog/alu32.v
+if {$FLOW eq "auto"} {
+    if {[llength [info commands compile_ultra]] > 0} { set FLOW "dc" }
+    if {[llength [info commands create_lib]] > 0}     { set FLOW "icc2" }
+}
+file mkdir ${IP}/asic
+file mkdir ${IP}/asic/reports
+file mkdir ${IP}/asic/work
+file mkdir ${IP}/gate
+puts "============================================================"
+============================================================
+puts "Unified Synopsys flow"
+Unified Synopsys flow
+puts "FLOW       = $FLOW"
+FLOW       = dc
+puts "RTL_FILE   = $RTL_FILE"
+RTL_FILE   = verilog/alu32.v
+puts "TOP/DESIGN = $DESIGN"
+TOP/DESIGN = alu32
+puts "CLK_PORT   = $CLK_PORT"
+CLK_PORT   = clk
+puts "CLK_PER    = $CLK_PER ns"
+CLK_PER    = 1.0 ns
+puts "RUN DIR    = $IP"
+RUN DIR    = /afs/umbc.edu/users/j/k/jkielty1/home/cmpe-641/lab
+puts "============================================================"
+============================================================
+################################################################################
+# Technology/library setup embedded from common_setup.tcl
+################################################################################
+set DESIGN_REF_PATH              "/umbc/software/design_kits/SAED14nm"
+/umbc/software/design_kits/SAED14nm
+set DESIGN_REF_TECH_PATH         "${DESIGN_REF_PATH}/tech"
+/umbc/software/design_kits/SAED14nm/tech
+set ADDITIONAL_SEARCH_PATH      " \
+        ${DESIGN_REF_PATH}/lib/stdcell_rvt/db_ccs \
+        ${DESIGN_REF_PATH}/lib/stdcell_hvt/db_ccs \
+        ${DESIGN_REF_PATH}/lib/stdcell_lvt/db_ccs \
+        ${DESIGN_REF_PATH}/lib/sram_lp/logic_synth/singlelp \
+        ${DESIGN_REF_PATH}/lib/io_std/db_ccs "
+  /umbc/software/design_kits/SAED14nm/lib/stdcell_rvt/db_ccs  /umbc/software/design_kits/SAED14nm/lib/stdcell_hvt/db_ccs  /umbc/software/design_kits/SAED14nm/lib/stdcell_lvt/db_ccs  /umbc/software/design_kits/SAED14nm/lib/sram_lp/logic_synth/singlelp  /umbc/software/design_kits/SAED14nm/lib/io_std/db_ccs 
+set LINK_LIBRARY_FILES   "* \
+${DESIGN_REF_PATH}/lib/stdcell_rvt/db_ccs/saed14rvt_dlvl_ss0p72v125c_i0p72v.db \
+${DESIGN_REF_PATH}/lib/stdcell_rvt/db_ccs/saed14rvt_dlvl_ss0p6v125c_i0p6v.db \
+${DESIGN_REF_PATH}/lib/stdcell_rvt/db_ccs/saed14rvt_pg_ss0p72v125c.db \
+${DESIGN_REF_PATH}/lib/stdcell_rvt/db_ccs/saed14rvt_ss0p72v125c.db \
+${DESIGN_REF_PATH}/lib/stdcell_rvt/db_ccs/saed14rvt_ulvl_ss0p72v125c_i0p72v.db \
+${DESIGN_REF_PATH}/lib/sram/logic_synth/single/saed14sram_ss0p72v125c.db "
+*  /umbc/software/design_kits/SAED14nm/lib/stdcell_rvt/db_ccs/saed14rvt_dlvl_ss0p72v125c_i0p72v.db  /umbc/software/design_kits/SAED14nm/lib/stdcell_rvt/db_ccs/saed14rvt_dlvl_ss0p6v125c_i0p6v.db  /umbc/software/design_kits/SAED14nm/lib/stdcell_rvt/db_ccs/saed14rvt_pg_ss0p72v125c.db  /umbc/software/design_kits/SAED14nm/lib/stdcell_rvt/db_ccs/saed14rvt_ss0p72v125c.db  /umbc/software/design_kits/SAED14nm/lib/stdcell_rvt/db_ccs/saed14rvt_ulvl_ss0p72v125c_i0p72v.db  /umbc/software/design_kits/SAED14nm/lib/sram/logic_synth/single/saed14sram_ss0p72v125c.db 
+set TARGET_LIBRARY_FILES   " \
+${DESIGN_REF_PATH}/lib/stdcell_rvt/db_ccs/saed14rvt_dlvl_ss0p72v125c_i0p72v.db \
+${DESIGN_REF_PATH}/lib/stdcell_rvt/db_ccs/saed14rvt_dlvl_ss0p6v125c_i0p6v.db \
+${DESIGN_REF_PATH}/lib/stdcell_rvt/db_ccs/saed14rvt_pg_ss0p72v125c.db \
+${DESIGN_REF_PATH}/lib/stdcell_rvt/db_ccs/saed14rvt_ss0p72v125c.db \
+${DESIGN_REF_PATH}/lib/stdcell_rvt/db_ccs/saed14rvt_ulvl_ss0p72v125c_i0p72v.db \
+${DESIGN_REF_PATH}/lib/sram/logic_synth/single/saed14sram_ss0p72v125c.db "
+  /umbc/software/design_kits/SAED14nm/lib/stdcell_rvt/db_ccs/saed14rvt_dlvl_ss0p72v125c_i0p72v.db  /umbc/software/design_kits/SAED14nm/lib/stdcell_rvt/db_ccs/saed14rvt_dlvl_ss0p6v125c_i0p6v.db  /umbc/software/design_kits/SAED14nm/lib/stdcell_rvt/db_ccs/saed14rvt_pg_ss0p72v125c.db  /umbc/software/design_kits/SAED14nm/lib/stdcell_rvt/db_ccs/saed14rvt_ss0p72v125c.db  /umbc/software/design_kits/SAED14nm/lib/stdcell_rvt/db_ccs/saed14rvt_ulvl_ss0p72v125c_i0p72v.db  /umbc/software/design_kits/SAED14nm/lib/sram/logic_synth/single/saed14sram_ss0p72v125c.db 
+set NDM_REFERENCE_LIB_DIRS  " \
+        ${DESIGN_REF_PATH}/lib/stdcell_rvt/ndm/saed14rvt_frame_timing_ccs.ndm \
+        ${DESIGN_REF_PATH}/lib/sram/ndm/saed14_sram_1rw_frame_only.ndm "
+  /umbc/software/design_kits/SAED14nm/lib/stdcell_rvt/ndm/saed14rvt_frame_timing_ccs.ndm  /umbc/software/design_kits/SAED14nm/lib/sram/ndm/saed14_sram_1rw_frame_only.ndm 
+set TECH_FILE                     "${DESIGN_REF_PATH}/tech/milkyway/saed14nm_1p9m_mw.tf"
+/umbc/software/design_kits/SAED14nm/tech/milkyway/saed14nm_1p9m_mw.tf
+set MAP_FILE                      "${DESIGN_REF_PATH}/tech/star_rc/saed14nm_tf_itf_tluplus.map"
+/umbc/software/design_kits/SAED14nm/tech/star_rc/saed14nm_tf_itf_tluplus.map
+set TLUPLUS_MAX_FILE              "${DESIGN_REF_PATH}/tech/star_rc/max/saed14nm_1p9m_Cmax.tluplus"
+/umbc/software/design_kits/SAED14nm/tech/star_rc/max/saed14nm_1p9m_Cmax.tluplus
+set TLUPLUS_MIN_FILE              "${DESIGN_REF_PATH}/tech/star_rc/min/saed14nm_1p9m_Cmin.tluplus"
+/umbc/software/design_kits/SAED14nm/tech/star_rc/min/saed14nm_1p9m_Cmin.tluplus
+set GDS_MAP_FILE                  "${DESIGN_REF_PATH}/tech/milkyway/saed14nm_1p9m_gdsout_mw.map"
+/umbc/software/design_kits/SAED14nm/tech/milkyway/saed14nm_1p9m_gdsout_mw.map
+set STD_CELL_GDS                  "${DESIGN_REF_PATH}/lib/stdcell_rvt/gds/saed14rvt.gds"
+/umbc/software/design_kits/SAED14nm/lib/stdcell_rvt/gds/saed14rvt.gds
+set SRAMLP_SINGLELP_GDS           "${DESIGN_REF_PATH}/lib/sram_lp/gds/singlelp.gds"
+/umbc/software/design_kits/SAED14nm/lib/sram_lp/gds/singlelp.gds
+set NDM_POWER_NET                 "VDD"
+VDD
+set NDM_POWER_PORT                "VDD"
+VDD
+set NDM_GROUND_NET                "VSS"
+VSS
+set NDM_GROUND_PORT               "VSS"
+VSS
+set MIN_ROUTING_LAYER             "M2"
+M2
+set MAX_ROUTING_LAYER             "M8"
+M8
+################################################################################
+# Metric helpers
+################################################################################
+proc slurp {fname} {
+    if {![file exists $fname]} { return "" }
+    set f [open $fname r]
+    set data [read $f]
+    close $f
+    return $data
+}
+proc first_regex {text regex default} {
+    if {[regexp -nocase -line -- $regex $text -> val unit]} {
+        if {$unit ne ""} { return "$val $unit" }
+        return $val
+    }
+    if {[regexp -nocase -line -- $regex $text -> val]} { return $val }
+    return $default
+}
+proc to_uW {val unit} {
+    set u [string tolower $unit]
+    if {$u eq "pw"} { return [expr {$val / 1000000.0}] }
+    if {$u eq "nw"} { return [expr {$val / 1000.0}] }
+    if {$u eq "uw"} { return [expr {$val}] }
+    if {$u eq "mw"} { return [expr {$val * 1000.0}] }
+    if {$u eq "w"}  { return [expr {$val * 1000000.0}] }
+    return $val
+}
+proc parse_power_summary {power_file} {
+    set txt [slurp $power_file]
+    set dyn "N/A"
+    set leak "N/A"
+    set total "N/A"
+
+    if {[regexp -nocase {Total Dynamic Power\s*=\s*([0-9.eE+-]+)\s*([a-zA-Z]+)} $txt -> dv du]} {
+        set dyn "$dv $du"
+        set dyn_uW [to_uW $dv $du]
+    }
+    if {[regexp -nocase {Cell Leakage Power\s*=\s*([0-9.eE+-]+)\s*([a-zA-Z]+)} $txt -> lv lu]} {
+        set leak "$lv $lu"
+        set leak_uW [to_uW $lv $lu]
+    }
+    if {[info exists dyn_uW] && [info exists leak_uW]} {
+        set total [format "%.6g uW" [expr {$dyn_uW + $leak_uW}]]
+    }
+    return [list $dyn $leak $total]
+}
+proc parse_dc_area {area_file} {
+    set txt [slurp $area_file]
+    set total_cell "N/A"
+    set total "N/A"
+    if {[regexp -nocase {Total cell area:\s*([0-9.eE+-]+)} $txt -> a]} { set total_cell $a }
+    if {[regexp -nocase {^Total area:\s*([0-9.eE+-]+)} $txt -> a]} { set total $a }
+    return [list "N/A: DC is pre-floorplan" $total]
+}
+proc parse_icc2_area {util_file} {
+    set txt [slurp $util_file]
+    set core "N/A"
+    set total_cells "N/A"
+    if {[regexp -nocase {Total Area:\s*([0-9.eE+-]+)} $txt -> a]} { set core $a }
+    if {[regexp -nocase {Total Area of cells:\s*([0-9.eE+-]+)} $txt -> a]} { set total_cells $a }
+    return [list $core $total_cells]
+}
+proc parse_clock_skew {skew_file} {
+    set txt [slurp $skew_file]
+    set skew "N/A"
+    foreach line [split $txt "\n"] {
+        # Grab numeric skew from data rows in report_clock_timing -type skew.
+        if {[regexp {\s+[A-Za-z0-9_\[\]/!.]+\s+[-0-9.eE+]+\s+([-0-9.eE+]+)\s+} $line -> s]} {
+            set skew $s
+        }
+    }
+    return $skew
+}
+proc parse_voltage_drop {fname} {
+    set txt [slurp $fname]
+    if {$txt eq ""} { return "N/A" }
+    set best "N/A"
+    foreach line [split $txt "\n"] {
+        if {[regexp -nocase {VDD.*(drop|ir).*?([0-9.eE+-]+)} $line -> dummy val]} { set best $val }
+        if {[regexp -nocase {(max).*?(drop|ir).*?([0-9.eE+-]+)} $line -> a b val]} { set best $val }
+    }
+    return $best
+}
+proc print_dc_metrics {} {
+    global IP DESIGN
+    set area_vals [parse_dc_area ${IP}/asic/reports/dc_area.rpt]
+    set pwr_vals  [parse_power_summary ${IP}/asic/reports/dc_power.rpt]
+    puts ""
+    puts "==================== FINAL DC METRICS ===================="
+    puts [format "%-35s %s" "Core area:"          [lindex $area_vals 0]]
+    puts [format "%-35s %s" "Total area:"         [lindex $area_vals 1]]
+    puts [format "%-35s %s" "Dynamic power:"      [lindex $pwr_vals 0]]
+    puts [format "%-35s %s" "Leakage power:"      [lindex $pwr_vals 1]]
+    puts [format "%-35s %s" "Total power:"        [lindex $pwr_vals 2]]
+    puts [format "%-35s %s" "Clock skew:"         "N/A: CTS is done in ICC2, not DC"]
+    puts [format "%-35s %s" "Max VDD voltage drop:" "N/A: no routed PG rail in DC"]
+    puts "Reports: ${IP}/asic/reports"
+    puts "=========================================================="
+}
+proc print_icc2_metrics {} {
+    global IP DESIGN
+    set area_vals [parse_icc2_area ${IP}/asic/reports/icc2_utilization.rpt]
+    set pwr_vals  [parse_power_summary ${IP}/asic/reports/icc2_power.rpt]
+    set skew      [parse_clock_skew ${IP}/asic/reports/icc2_clock_skew.rpt]
+    set vdrop     [parse_voltage_drop ${IP}/asic/reports/icc2_vdd_voltage_drop.rpt]
+    puts ""
+    puts "=================== FINAL ICC2 METRICS ==================="
+    puts [format "%-35s %s" "Core area:"          [lindex $area_vals 0]]
+    puts [format "%-35s %s" "Total area of cells:" [lindex $area_vals 1]]
+    puts [format "%-35s %s" "Dynamic power:"      [lindex $pwr_vals 0]]
+    puts [format "%-35s %s" "Leakage power:"      [lindex $pwr_vals 1]]
+    puts [format "%-35s %s" "Total power:"        [lindex $pwr_vals 2]]
+    puts [format "%-35s %s" "Clock skew:"         $skew]
+    puts [format "%-35s %s" "Max VDD voltage drop:" $vdrop]
+    puts "Reports: ${IP}/asic/reports"
+    puts "=========================================================="
+}
+################################################################################
+# DC flow
+################################################################################
+proc run_dc {} {
+    global IP DESIGN top_mod RTL_SOURCE_FILES CLK_PORT CLK_PER DESIGN_REF_PATH
+    global search_path link_library target_library
+
+    set_svf "${IP}/asic/${DESIGN}.svf"
+
+    if {![info exists search_path]} { set search_path "." }
+    set search_path "$search_path ${DESIGN_REF_PATH}/lib/stdcell_rvt/db_ccs ${DESIGN_REF_PATH}/lib/stdcell_rvt"
+
+    set rvt_library "${DESIGN_REF_PATH}/lib/stdcell_rvt/db_ccs/saed14rvt_tt0p8v25c.db \
+                     ${DESIGN_REF_PATH}/lib/stdcell_rvt/db_ccs/saed14rvt_ss0p72v125c.db \
+                     ${DESIGN_REF_PATH}/lib/stdcell_rvt/db_ccs/saed14rvt_ss0p6v125c.db"
+
+    set link_library   "$rvt_library"
+    set target_library "$rvt_library"
+
+    if {[file exists prototype_$DESIGN]} {
+        file delete -force prototype_$DESIGN
+    }
+
+    create_mw_lib prototype_$DESIGN \
+        -technology ${DESIGN_REF_PATH}/tech/milkyway/saed14nm_1p9m_mw.tf \
+        -mw_reference_library [list ${DESIGN_REF_PATH}/lib/stdcell_rvt/milkyway/saed14nm_rvt_1p9m]
+    open_mw_lib prototype_$DESIGN
+
+    set_host_options -max_cores 16
+    define_design_lib work -path ${IP}/asic/work
+
+    analyze -define {ASIC=1} -f sverilog -library work $RTL_SOURCE_FILES
+    elaborate -library work ${DESIGN}
+    current_design ${DESIGN}
+    link
+
+    if {[sizeof_collection [get_ports -quiet $CLK_PORT]] > 0} {
+        create_clock -name $CLK_PORT -period $CLK_PER [get_ports $CLK_PORT]
+    } else {
+        puts "WARNING: Clock port '$CLK_PORT' not found; skipping create_clock. Use -clk <port> if needed."
+    }
+
+    compile_ultra
+    uniquify
+    change_names -rules verilog -hierarchy
+
+    write -hierarchy -format verilog -output ${IP}/asic/${DESIGN}_icc.v ${DESIGN}
+    write_sdc ${IP}/asic/${DESIGN}.sdc
+    write_sdf -significant_digits 13 ${IP}/asic/${DESIGN}.sdf
+
+    redirect ${IP}/asic/reports/dc_area.rpt   { report_area }
+    redirect ${IP}/asic/reports/dc_power.rpt  { report_power -analysis_effort medium }
+    redirect ${IP}/asic/reports/dc_timing.rpt { report_timing -max_paths 10 }
+    redirect ${IP}/asic/reports/dc_qor.rpt    { report_qor }
+
+    print_dc_metrics
+}
+################################################################################
+# ICC2 MCMM setup embedded from mcmm.tcl
+################################################################################
+proc setup_mcmm {} {
+    global IP DESIGN TLUPLUS_MAX_FILE TLUPLUS_MIN_FILE MAP_FILE
+    set Constraints_file "${IP}/asic/${DESIGN}.sdc"
+
+    remove_corners -all
+    remove_modes -all
+    remove_scenarios -all
+
+    create_corner slow
+    create_corner fast
+
+    read_parasitic_tech -tlup $TLUPLUS_MAX_FILE -layermap $MAP_FILE -name tlup_max
+    read_parasitic_tech -tlup $TLUPLUS_MIN_FILE -layermap $MAP_FILE -name tlup_min
+
+    set_parasitics_parameters -early_spec tlup_min -late_spec tlup_min -corners {fast}
+    set_parasitics_parameters -early_spec tlup_max -late_spec tlup_max -corners {slow}
+
+    create_mode func
+    current_mode func
+    create_scenario -mode func -corner fast -name func_fast
+    create_scenario -mode func -corner slow -name func_slow
+
+    current_scenario func_fast
+    read_sdc $Constraints_file
+    current_scenario func_slow
+    read_sdc $Constraints_file
+}
+proc maybe_report_vdd_drop {} {
+    global IP DESIGN NDM_POWER_NET
+    set out ${IP}/asic/reports/icc2_vdd_voltage_drop.rpt
+    set f [open $out w]
+    puts $f "Voltage-drop report attempt for $NDM_POWER_NET"
+    close $f
+
+    # ICC2 installations differ: many academic flows do not include PrimeRail/rail analysis.
+    # This tries common report names without stopping the main P&R flow.
+    if {[llength [info commands report_rail_result]] > 0} {
+        catch {redirect -append $out {report_rail_result -type effective_voltage_drop -nets VDD}} msg
+        return
+    }
+    if {[llength [info commands report_power_rail_results]] > 0} {
+        catch {redirect -append $out {report_power_rail_results -nets VDD}} msg
+        return
+    }
+    set f [open $out a]
+    puts $f "N/A: rail voltage-drop reporting command is not available in this ICC2 shell/license."
+    puts $f "Use PrimeRail/RedHawk/signoff rail analysis for a real max VDD IR-drop number."
+    close $f
+}
+################################################################################
+# ICC2 flow
+################################################################################
+proc safe_clock_opt {} {
+    global IP
+    set rpt "${IP}/asic/reports/icc2_clock_opt_status.rpt"
+    set fh [open $rpt w]
+    puts $fh "Running clock_opt..."
+    close $fh
+
+    # On this ICC2 build, clock_opt can stop Tcl with message "Error: 0" after
+    # FLW-8004/FLW-8001. Catch it so the lab flow can continue to route/report.
+    set rc [catch {clock_opt} msg opts]
+    set fh [open $rpt a]
+    if {$rc} {
+        puts $fh "clock_opt returned Tcl error code $rc"
+        puts $fh "message: $msg"
+        if {[dict exists $opts -errorinfo]} {
+            puts $fh "errorinfo:"
+            puts $fh [dict get $opts -errorinfo]
+        }
+        puts "WARNING: clock_opt did not complete cleanly; continuing. See $rpt"
+    } else {
+        puts $fh "clock_opt completed without Tcl error."
+        puts "INFO: clock_opt completed."
+    }
+    close $fh
+    return
+}
+proc safe_redirect_report {outfile body} {
+    # Run a report command, but do not stop the full ICC2 flow if the report
+    # is unavailable. This is useful for small/combinational designs where CTS
+    # never initializes, so clock QoR/skew reports can throw errors.
+    set rc [catch {redirect $outfile $body} msg opts]
+    if {$rc} {
+        set fh [open $outfile w]
+        puts $fh "N/A: report command failed, so this metric is not available for this run."
+        puts $fh "message: $msg"
+        if {[dict exists $opts -errorinfo]} {
+            puts $fh "errorinfo:"
+            puts $fh [dict get $opts -errorinfo]
+        }
+        close $fh
+        puts "WARNING: Report failed but flow is continuing. See $outfile"
+    }
+    return
+}
+proc run_icc2 {} {
+    global IP DESIGN CLK_PORT CLK_PER LINK_LIBRARY_FILES TARGET_LIBRARY_FILES NDM_REFERENCE_LIB_DIRS TECH_FILE
+    global TLUPLUS_MAX_FILE TLUPLUS_MIN_FILE MAP_FILE NDM_POWER_NET NDM_GROUND_NET
+    global MIN_ROUTING_LAYER MAX_ROUTING_LAYER GDS_MAP_FILE STD_CELL_GDS SRAMLP_SINGLELP_GDS
+
+    set_host_options -max_cores 16
+    set link_library   $LINK_LIBRARY_FILES
+    set target_library $TARGET_LIBRARY_FILES
+
+    set lib_path ${IP}/asic/work/${DESIGN}
+    if {[file exists $lib_path]} { file delete -force $lib_path }
+    create_lib -ref_libs $NDM_REFERENCE_LIB_DIRS -technology $TECH_FILE $lib_path
+
+    read_parasitic_tech -tlup $TLUPLUS_MAX_FILE -layermap $MAP_FILE
+    read_parasitic_tech -tlup $TLUPLUS_MIN_FILE -layermap $MAP_FILE
+
+    set gate_verilog "${IP}/asic/${DESIGN}_icc.v"
+    if {![file exists $gate_verilog]} {
+        puts "ERROR: $gate_verilog not found. Run this same script in DC first."
+        exit 1
+    }
+
+    read_verilog -top $DESIGN $gate_verilog
+    current_design $DESIGN
+
+    if {[file exists ${IP}/asic/${DESIGN}.sdc]} {
+        read_sdc ${IP}/asic/${DESIGN}.sdc
+    } elseif {[sizeof_collection [get_ports -quiet $CLK_PORT]] > 0} {
+        create_clock -name $CLK_PORT -period $CLK_PER [get_ports $CLK_PORT]
+    }
+
+    setup_mcmm
+
+    set_attribute [get_layers M1] routing_direction vertical
+    set_attribute [get_layers M2] routing_direction horizontal
+    set_attribute [get_layers M3] routing_direction vertical
+    set_attribute [get_layers M4] routing_direction horizontal
+    set_attribute [get_layers M5] routing_direction vertical
+    set_attribute [get_layers M6] routing_direction horizontal
+    set_attribute [get_layers M7] routing_direction vertical
+    set_attribute [get_layers M8] routing_direction horizontal
+    set_attribute [get_layers M9] routing_direction vertical
+    set_attribute [get_layers MRDL] routing_direction horizontal
+
+    set_wire_track_pattern -site_def unit -layer M1 -mode uniform \
+        -mask_constraint {mask_two mask_one} -coord 0.037 -space 0.074 -direction vertical
+
+    initialize_floorplan -core_utilization 0.60 -side_ratio {15 33} -core_offset {10 10 10 10}
+    place_pins -ports [get_ports *]
+
+    create_net -power $NDM_POWER_NET
+    create_net -ground $NDM_GROUND_NET
+    connect_pg_net -net $NDM_POWER_NET [get_pins -hierarchical "*/VDD"]
+    connect_pg_net -net $NDM_GROUND_NET [get_pins -hierarchical "*/VSS"]
+
+    create_placement -floorplan -timing_driven
+    legalize_placement
+
+    remove_pg_via_master_rules -all
+    remove_pg_patterns -all
+    remove_pg_strategies -all
+    remove_pg_strategy_via_rules -all
+
+    set top_ring_width 5
+    set top_offset 2
+    set top_ring_spacing 5
+    set hm_top M6
+    set vm_top M5
+
+    create_pg_region top_power_ring_region -core -expand_by_edge \
+        "{{side: 1} {offset: $top_offset}} {{side: 2} {offset: $top_offset}} {{side: 3} {offset: $top_offset}} {{side: 4} {offset: $top_offset}}"
+
+    create_pg_ring_pattern ring \
+        -horizontal_layer $hm_top -vertical_layer $vm_top \
+        -horizontal_width $top_ring_width -vertical_width $top_ring_width \
+        -horizontal_spacing $top_ring_spacing -vertical_spacing $top_ring_spacing
+
+    set_pg_strategy ring -pg_regions {top_power_ring_region} -pattern {{name: ring} {nets: "VSS VDD"}}
+    compile_pg -strategies ring
+
+    create_pg_mesh_pattern P_top_two \
+        -layers { \
+            { {horizontal_layer: M7} {width: 0.2} {spacing: interleaving} {pitch: 30} {offset: 0.856} {trim : true} } \
+            { {vertical_layer: M6}   {width: 0.2} {spacing: interleaving} {pitch: 30} {offset: 6.08}  {trim : true} } \
+        }
+
+    set_pg_strategy S_default_vddvss \
+        -core \
+        -pattern { {name: P_top_two} {nets:{VSS VDD}} } \
+        -extension { {{stop:design_boundary_and_generate_pin}} }
+    compile_pg -strategies {S_default_vddvss}
+
+    create_pg_std_cell_conn_pattern std_rail_conn1 -rail_width 0.094 -layers M1
+    set_pg_strategy std_rail_1 -pattern {{name : std_rail_conn1} {nets: "VDD VSS"}} -core
+    compile_pg -strategies std_rail_1
+
+    redirect ${IP}/asic/reports/icc2_pg_drc.rpt { check_pg_drc }
+
+    set_app_options -name time.disable_recovery_removal_checks -value false
+    set_app_options -name time.disable_case_analysis -value false
+    set_app_options -name place.coarse.continue_on_missing_scandef -value true
+    set_app_options -name opt.common.user_instance_name_prefix -value place
+
+    place_opt
+    legalize_placement
+    redirect ${IP}/asic/reports/icc2_check_legality.rpt { check_legality -verbose }
+
+    create_routing_rule ROUTE_RULES_1 -widths {M3 0.2 M4 0.2} -spacings {M3 0.42 M4 0.63}
+    set_clock_routing_rules -default_rule -min_routing_layer M2 -max_routing_layer M4
+    set_clock_tree_options -target_latency 0.000 -target_skew 0.000
+
+    safe_clock_opt
+    write_verilog ${IP}/asic/work/${DESIGN}.cts.gate.v
+    safe_redirect_report ${IP}/asic/reports/icc2_clock_qor.rpt  { report_clock_qor }
+    safe_redirect_report ${IP}/asic/reports/icc2_clock_skew.rpt { report_clock_timing -type skew -nworst 1 -setup }
+
+    remove_ignored_layers -all
+    set_ignored_layers -min_routing_layer $MIN_ROUTING_LAYER -max_routing_layer $MAX_ROUTING_LAYER
+
+    route_auto
+    route_opt
+    redirect ${IP}/asic/reports/icc2_routability.rpt { check_routability }
+
+    set pnr_std_fillers "SAEDRVT14_FILL*"
+    set std_fillers ""
+    foreach filler $pnr_std_fillers { lappend std_fillers "*/${filler}" }
+    create_stdcell_filler -lib_cell $std_fillers
+
+    connect_pg_net -net $NDM_POWER_NET [get_pins -hierarchical "*/VDD"]
+    connect_pg_net -net $NDM_GROUND_NET [get_pins -hierarchical "*/VSS"]
+
+    write_verilog ${IP}/asic/work/${DESIGN}.icc2.gate.v
+
+    redirect ${IP}/asic/reports/icc2_timing.rpt      { report_timing -max_paths 10 }
+    redirect ${IP}/asic/reports/icc2_power.rpt       { report_power -significant_digits 4 }
+    redirect ${IP}/asic/reports/icc2_qor.rpt         { report_qor }
+    redirect ${IP}/asic/reports/icc2_utilization.rpt { report_utilization }
+
+    maybe_report_vdd_drop
+
+    save_block -as ${DESIGN}_7_finished
+
+    change_names -rules verilog -verbose
+    write_verilog -include {pg_netlist unconnected_ports} ${IP}/asic/${DESIGN}_pnr.v
+
+    write_gds -design ${DESIGN}_7_finished \
+        -layer_map $GDS_MAP_FILE \
+        -keep_data_type \
+        -fill include \
+        -output_pin all \
+        -merge_files "$STD_CELL_GDS $SRAMLP_SINGLELP_GDS" \
+        -long_names \
+        ${IP}/asic/${DESIGN}_pnr.gds
+
+    write_parasitics -output ${IP}/asic/${DESIGN}_pnr.spf
+
+    print_icc2_metrics
+}
+################################################################################
+# Main
+################################################################################
+if {$FLOW eq "dc"} {
+    run_dc
+    quit
+} elseif {$FLOW eq "icc2"} {
+    run_icc2
+    exit
+} else {
+    puts "ERROR: Unknown FLOW '$FLOW'. Use -flow dc or -flow icc2."
+    exit 1
+}
+Start to load technology file /umbc/software/design_kits/SAED14nm/tech/milkyway/saed14nm_1p9m_mw.tf.
+Warning: LayerExt 'M2' is missing the attribute 'maskEndMaxWidthThresholdTbl'. (line 619) (TFCHK-014)
+Warning: LayerExt 'M2' is missing the attribute 'maskEndToEndKeepoutLengthTbl'. (line 619) (TFCHK-014)
+Warning: LayerExt 'M2' is missing the attribute 'maskEndToSideKeepoutLengthTbl'. (line 619) (TFCHK-014)
+Warning: LayerExt 'M2' is missing the attribute 'maskEndToEndMinSpacingTbl'. (line 619) (TFCHK-014)
+Warning: LayerExt 'M2' is missing the attribute 'maskEndToSideMinSpacingTbl'. (line 619) (TFCHK-014)
+Warning: Layer 'M4' has a pitch 0.074 that is less than the minimum spacing and width sum 0.1. (line 748) (TFCHK-048)
+Warning: Layer 'MRDL' has a pitch 0.6 that is less than the minimum spacing and width sum 4. (line 1363) (TFCHK-048)
+Warning: Layer 'prBoundary' with layer number '188' is overriding pre-defined system layer. (line 1459) (TFCHK-114)
+Information: ContactCode 'VIA12SQ_C' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.04. (line 1682) (TFCHK-072)
+Information: ContactCode 'VIA12BAR1_C' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.04. (line 1700) (TFCHK-072)
+Information: ContactCode 'VIA12BAR2_C' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.04. (line 1719) (TFCHK-072)
+Information: ContactCode 'VIA12LG_C' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.04. (line 1738) (TFCHK-072)
+Information: ContactCode 'VIA12SQ' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.04. (line 1757) (TFCHK-072)
+Information: ContactCode 'VIA12BAR1' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.04. (line 1776) (TFCHK-072)
+Information: ContactCode 'VIA12BAR2' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.04. (line 1795) (TFCHK-072)
+Information: ContactCode 'VIA12LG' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.04. (line 1814) (TFCHK-072)
+Information: ContactCode 'VIA1_32SQ_C' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.04. (line 1833) (TFCHK-072)
+Information: ContactCode 'VIA1_32BAR1_C' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.04. (line 1852) (TFCHK-072)
+Information: ContactCode 'VIA1_32BAR2_C' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.04. (line 1871) (TFCHK-072)
+Information: ContactCode 'VIA1_32LG_C' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.04. (line 1890) (TFCHK-072)
+Information: ContactCode 'VIA1_32SQ' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.04. (line 1909) (TFCHK-072)
+Information: ContactCode 'VIA1_32BAR1' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.04. (line 1928) (TFCHK-072)
+Information: ContactCode 'VIA1_32BAR2' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.04. (line 1947) (TFCHK-072)
+Information: ContactCode 'VIA1_32LG' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.04. (line 1966) (TFCHK-072)
+Information: ContactCode 'VIA12_3SQ_C' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.04. (line 1985) (TFCHK-072)
+Information: ContactCode 'VIA12_3BAR1_C' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.04. (line 2004) (TFCHK-072)
+Information: ContactCode 'VIA12_3BAR2_C' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.04. (line 2023) (TFCHK-072)
+Information: ContactCode 'VIA12_3LG_C' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.04. (line 2042) (TFCHK-072)
+Information: ContactCode 'VIA12_3SQ' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.04. (line 2061) (TFCHK-072)
+Information: ContactCode 'VIA12_3BAR1' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.04. (line 2080) (TFCHK-072)
+Information: ContactCode 'VIA12_3BAR2' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.04. (line 2099) (TFCHK-072)
+Information: ContactCode 'VIA12_3LG' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.04. (line 2118) (TFCHK-072)
+Information: ContactCode 'VIA1_32_3SQ_C' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.04. (line 2137) (TFCHK-072)
+Information: ContactCode 'VIA1_32_3BAR1_C' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.04. (line 2156) (TFCHK-072)
+Information: ContactCode 'VIA1_32_3BAR2_C' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.04. (line 2175) (TFCHK-072)
+Information: ContactCode 'VIA1_32_3LG_C' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.04. (line 2194) (TFCHK-072)
+Information: ContactCode 'VIA1_32_3SQ' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.04. (line 2213) (TFCHK-072)
+Information: ContactCode 'VIA1_32_3BAR1' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.04. (line 2232) (TFCHK-072)
+Information: ContactCode 'VIA1_32_3BAR2' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.04. (line 2251) (TFCHK-072)
+Information: ContactCode 'VIA1_32_3LG' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.04. (line 2270) (TFCHK-072)
+Information: ContactCode 'VIA23SQ_C' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.05. (line 2290) (TFCHK-072)
+Information: ContactCode 'VIA23BAR1_C' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.05. (line 2310) (TFCHK-072)
+Information: ContactCode 'VIA23BAR2_C' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.05. (line 2329) (TFCHK-072)
+Information: ContactCode 'VIA23LG_C' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.05. (line 2348) (TFCHK-072)
+Information: ContactCode 'VIA23SQ' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.05. (line 2367) (TFCHK-072)
+Information: ContactCode 'VIA23BAR1' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.05. (line 2386) (TFCHK-072)
+Information: ContactCode 'VIA23BAR2' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.05. (line 2405) (TFCHK-072)
+Information: ContactCode 'VIA23LG' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.05. (line 2424) (TFCHK-072)
+Information: ContactCode 'VIA2_33SQ_C' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.05. (line 2443) (TFCHK-072)
+Information: ContactCode 'VIA2_33BAR1_C' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.05. (line 2462) (TFCHK-072)
+Information: ContactCode 'VIA2_33BAR2_C' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.05. (line 2481) (TFCHK-072)
+Information: ContactCode 'VIA2_33LG_C' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.05. (line 2500) (TFCHK-072)
+Information: ContactCode 'VIA2_33SQ' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.05. (line 2519) (TFCHK-072)
+Information: ContactCode 'VIA2_33BAR1' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.05. (line 2538) (TFCHK-072)
+Information: ContactCode 'VIA2_33BAR2' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.05. (line 2557) (TFCHK-072)
+Information: ContactCode 'VIA2_33LG' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.05. (line 2576) (TFCHK-072)
+Information: ContactCode 'VIA23_3SQ_C' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.05. (line 2595) (TFCHK-072)
+Information: ContactCode 'VIA23_3BAR1_C' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.05. (line 2614) (TFCHK-072)
+Information: ContactCode 'VIA23_3BAR2_C' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.05. (line 2633) (TFCHK-072)
+Information: ContactCode 'VIA23_3LG_C' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.05. (line 2652) (TFCHK-072)
+Information: ContactCode 'VIA23_3SQ' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.05. (line 2671) (TFCHK-072)
+Information: ContactCode 'VIA23_3BAR1' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.05. (line 2690) (TFCHK-072)
+Information: ContactCode 'VIA23_3BAR2' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.05. (line 2709) (TFCHK-072)
+Information: ContactCode 'VIA23_3LG' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.05. (line 2727) (TFCHK-072)
+Information: ContactCode 'VIA2_33_3SQ_C' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.05. (line 2746) (TFCHK-072)
+Information: ContactCode 'VIA2_33_3BAR1_C' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.05. (line 2765) (TFCHK-072)
+Information: ContactCode 'VIA2_33_3BAR2_C' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.05. (line 2784) (TFCHK-072)
+Information: ContactCode 'VIA2_33_3LG_C' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.05. (line 2803) (TFCHK-072)
+Information: ContactCode 'VIA2_33_3SQ' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.05. (line 2822) (TFCHK-072)
+Information: ContactCode 'VIA2_33_3BAR1' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.05. (line 2841) (TFCHK-072)
+Information: ContactCode 'VIA2_33_3BAR2' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.05. (line 2860) (TFCHK-072)
+Information: ContactCode 'VIA2_33_3LG' has a minimum cut spacing 0.026 that is less than the cut layer minimum spacing 0.05. (line 2879) (TFCHK-072)
+Warning: Layer 'M1' has a pitch 0.074 that does not match the recommended wire-to-via pitch 0.118 or 0.075. (TFCHK-049)
+Warning: Layer 'M2' has a pitch 0.06 that does not match the recommended wire-to-via pitch 0.118. (TFCHK-049)
+Warning: Layer 'M3' has a pitch 0.074 that does not match the recommended wire-to-via pitch 0.118. (TFCHK-049)
+Warning: Layer 'M4' has a pitch 0.074 that does not match the recommended wire-to-via pitch 0.135. (TFCHK-049)
+Warning: Layer 'M5' has a pitch 0.12 that does not match the recommended wire-to-via pitch 0.135. (TFCHK-049)
+Warning: Layer 'M6' has a pitch 0.12 that does not match the recommended wire-to-via pitch 0.135. (TFCHK-049)
+Warning: Layer 'M7' has a pitch 0.12 that does not match the recommended wire-to-via pitch 0.135 or 0.137. (TFCHK-049)
+Warning: Layer 'M8' has a pitch 0.12 that does not match the recommended wire-to-via pitch 0.135 or 0.137. (TFCHK-049)
+Warning: Layer 'M9' has a pitch 0.12 that does not match the recommended wire-to-via pitch 1.57. (TFCHK-049)
+Warning: Layer 'MRDL' has a pitch 0.6 that does not match the recommended wire-to-via pitch 4.5. (TFCHK-049)
+Warning: Layer 'M3' has a pitch 0.074 that does not match the doubled pitch 0.148 or tripled pitch 0.222. (TFCHK-050)
+Warning: Layer 'M4' has a pitch 0.074 that does not match the doubled pitch 0.12 or tripled pitch 0.18. (TFCHK-050)
+Warning: Layer 'M5' has a pitch 0.12 that does not match the doubled pitch 0.148 or tripled pitch 0.222. (TFCHK-050)
+Warning: Layer 'M6' has a pitch 0.12 that does not match the doubled pitch 0.148 or tripled pitch 0.222. (TFCHK-050)
+Warning: Layer 'M7' has a pitch 0.12 that does not match the doubled pitch 0.24 or tripled pitch 0.36. (TFCHK-050)
+Warning: Layer 'M8' has a pitch 0.12 that does not match the doubled pitch 0.24 or tripled pitch 0.36. (TFCHK-050)
+Warning: Layer 'M9' has a pitch 0.12 that does not match the doubled pitch 0.24 or tripled pitch 0.36. (TFCHK-050)
+Warning: Layer 'MRDL' has a pitch 0.6 that does not match the doubled pitch 0.24 or tripled pitch 0.36. (TFCHK-050)
+Warning: ContactCode 'VIA2_33_3LG_C' attribute 'minCutSpacing' has an invalid value of 0.026. (TFCHK-093)
+Warning: ContactCode 'VIA2_33_3LG' attribute 'minCutSpacing' has an invalid value of 0.026. (TFCHK-093)
+Warning: ContactCode 'VIA23LG' attribute 'minCutSpacing' has an invalid value of 0.026. (TFCHK-093)
+Warning: ContactCode 'VIA2_33LG_C' attribute 'minCutSpacing' has an invalid value of 0.026. (TFCHK-093)
+Warning: ContactCode 'VIA2_33LG' attribute 'minCutSpacing' has an invalid value of 0.026. (TFCHK-093)
+Warning: ContactCode 'VIA23_3LG_C' attribute 'minCutSpacing' has an invalid value of 0.026. (TFCHK-093)
+Warning: ContactCode 'VIA23_3LG' attribute 'minCutSpacing' has an invalid value of 0.026. (TFCHK-093)
+Warning: ContactCode 'VIA12_3LG_C' attribute 'minCutSpacing' has an invalid value of 0.026. (TFCHK-093)
+Warning: ContactCode 'VIA12_3LG' attribute 'minCutSpacing' has an invalid value of 0.026. (TFCHK-093)
+Warning: ContactCode 'VIA1_32_3LG_C' attribute 'minCutSpacing' has an invalid value of 0.026. (TFCHK-093)
+Warning: ContactCode 'VIA1_32_3LG' attribute 'minCutSpacing' has an invalid value of 0.026. (TFCHK-093)
+Warning: ContactCode 'VIA23LG_C' attribute 'minCutSpacing' has an invalid value of 0.026. (TFCHK-093)
+Warning: ContactCode 'VIA12LG_C' attribute 'minCutSpacing' has an invalid value of 0.026. (TFCHK-093)
+Warning: ContactCode 'VIA12LG' attribute 'minCutSpacing' has an invalid value of 0.026. (TFCHK-093)
+Warning: ContactCode 'VIA1_32LG_C' attribute 'minCutSpacing' has an invalid value of 0.026. (TFCHK-093)
+Warning: ContactCode 'VIA1_32LG' attribute 'minCutSpacing' has an invalid value of 0.026. (TFCHK-093)
+Warning: cutNameTbl on layer 'VIA4' has cut name 'VIA4BAR1' with no matching ContactCode found. (TFCHK-111)
+Warning: CapModel sections are missing. Capacitance models should be loaded with a TLU+ file later. (TFCHK-084)
+Technology file /umbc/software/design_kits/SAED14nm/tech/milkyway/saed14nm_1p9m_mw.tf has been loaded successfully.
+Warning: Reference Library Inconsistent With Main Library
+Reference Library: /umbc/software/design_kits/SAED14nm/lib/stdcell_rvt/milkyway/saed14nm_rvt_1p9m (MWLIBP-300)
+Warning: Inconsistent Data for Contact Code 33
+        Lower Layer     M2 (40, 2)        |     M2 (60, 2)
+        Main Library (prototype_alu32)    |     Reference Library (saed14nm_rvt_1p9m)
+ (MWLIBP-324)
+Warning: Inconsistent Data for Contact Code 1
+        Lower Layer     M1 (40, 2)        |     M1 (60, 2)
+        Main Library (prototype_alu32)    |     Reference Library (saed14nm_rvt_1p9m)
+ (MWLIBP-324)
+Warning: You requested 16 cores. However, the host cadence1.cs.umbc.edu only has 4 available cores. The tool will ignore the request and use -max_cores 4. (UIO-230)
+Running PRESTO HDLC
+Compiling source file ./verilog/alu32.v
+Presto compilation completed successfully.
+Loading db file '/umbc/software/design_kits/SAED14nm/lib/stdcell_rvt/db_ccs/saed14rvt_tt0p8v25c.db'
+Information: Using CCS timing libraries. (TIM-024)
+Warning: Error occured in ccs delay calculation, results may not be accurate.
+Loading db file '/umbc/software/design_kits/SAED14nm/lib/stdcell_rvt/db_ccs/saed14rvt_ss0p72v125c.db'
+Loading db file '/umbc/software/design_kits/SAED14nm/lib/stdcell_rvt/db_ccs/saed14rvt_ss0p6v125c.db'
+Loading db file '/umbc/software/synopsys/syn/V-2023.12-SP5/libraries/syn/gtech.db'
+Loading db file '/umbc/software/synopsys/syn/V-2023.12-SP5/libraries/syn/standard.sldb'
+  Loading link library 'saed14rvt_tt0p8v25c'
+  Loading link library 'saed14rvt_ss0p72v125c'
+  Loading link library 'saed14rvt_ss0p6v125c'
+  Loading link library 'gtech'
+Running PRESTO HDLC
+Warning:  ./verilog/alu32.v:36: signed to unsigned assignment occurs. (VER-318)
+Presto compilation completed successfully. (alu32)
+Elaborated 1 design.
+Current design is now 'alu32'.
+Current design is 'alu32'.
+
+  Linking design 'alu32'
+  Using the following designs and libraries:
+  --------------------------------------------------------------------------
+  saed14rvt_tt0p8v25c (library) /umbc/software/design_kits/SAED14nm/lib/stdcell_rvt/db_ccs/saed14rvt_tt0p8v25c.db
+  saed14rvt_ss0p72v125c (library) /umbc/software/design_kits/SAED14nm/lib/stdcell_rvt/db_ccs/saed14rvt_ss0p72v125c.db
+  saed14rvt_ss0p6v125c (library) /umbc/software/design_kits/SAED14nm/lib/stdcell_rvt/db_ccs/saed14rvt_ss0p6v125c.db
+
+WARNING: Clock port 'clk' not found; skipping create_clock. Use -clk <port> if needed.
+Loading db file '/umbc/software/synopsys/syn/V-2023.12-SP5/libraries/syn/dw_foundation.sldb'
+Warning: DesignWare synthetic library dw_foundation.sldb is added to the synthetic_library in the current command. (UISN-40)
+Information: Performing leakage power optimization. (PWR-850)
+Analyzing: "/umbc/software/design_kits/SAED14nm/lib/stdcell_rvt/db_ccs/saed14rvt_tt0p8v25c.db"
+Analyzing: "/umbc/software/design_kits/SAED14nm/lib/stdcell_rvt/db_ccs/saed14rvt_ss0p72v125c.db"
+Analyzing: "/umbc/software/design_kits/SAED14nm/lib/stdcell_rvt/db_ccs/saed14rvt_ss0p6v125c.db"
+Library analysis succeeded.
+Information: Running optimization using a maximum of 4 cores. (OPT-1500)
+Information: Evaluating DesignWare library utilization. (UISN-27)
+
+============================================================================
+| DesignWare Building Block Library  |         Version         | Available |
+============================================================================
+| Basic DW Building Blocks           | V-2023.12-DWBB_202312.5 |     *     |
+| Licensed DW Building Blocks        | V-2023.12-DWBB_202312.5 |     *     |
+============================================================================
+
+====================================================================================================
+| Flow Information                                                                                 |
+----------------------------------------------------------------------------------------------------
+| Flow         | Design Compiler WLM                                                               |
+| Command Line | compile_ultra                                                                     |
+====================================================================================================
+| Design Information                                      | Value                                  |
+====================================================================================================
+| Number of Scenarios                                     | 0                                      |
+| Leaf Cell Count                                         | 266                                    |
+| Number of User Hierarchies                              | 0                                      |
+| Sequential Cell Count                                   | 0                                      |
+| Macro Count                                             | 0                                      |
+| Number of Power Domains                                 | 0                                      |
+| Number of Path Groups                                   | 1                                      |
+| Number of VT Class                                      | 0                                      |
+| Number of Clocks                                        | 0                                      |
+| Number of Dont Touch Cells                              | 14                                     |
+| Number of Dont Touch Nets                               | 0                                      |
+| Number of Size Only Cells                               | 0                                      |
+| Design with UPF Data                                    | false                                  |
+====================================================================================================
+Information: Sequential output inversion is enabled.  SVF file must be used for formal verification. (OPT-1208)
+
+Information: There are 1 potential problems in your design. Please run 'check_design' for more information. (LINT-99)
+
+  Simplifying Design 'alu32'
+
+  Loading target library 'saed14rvt_ss0p72v125c'
+  Loading target library 'saed14rvt_ss0p6v125c'
+Loaded alib file './alib-52/saed14rvt_tt0p8v25c.db.alib'
+Loaded alib file './alib-52/saed14rvt_ss0p72v125c.db.alib'
+Loaded alib file './alib-52/saed14rvt_ss0p6v125c.db.alib'
+Warning: Operating condition tt0p8v25c set on design alu32 has different process,
+voltage and temperatures parameters than the parameters at which target library 
+saed14rvt_ss0p72v125c is characterized. Delays may be inaccurate as a result. (OPT-998)
+  Building model 'DW01_NAND2'
+Information: Ungrouping 0 of 1 hierarchies before Pass 1 (OPT-775)
+Information: State dependent leakage is now switched from on to off.
+
+  Beginning Pass 1 Mapping
+  ------------------------
+  Processing 'alu32'
+ Implement Synthetic for 'alu32'.
+Information: Added key list 'DesignWare' to design 'alu32'. (DDB-72)
+
+  Updating timing information
+Information: Updating design information... (UID-85)
+Information: The library cell 'SAEDRVT14_TIE1_PV1ECO_1' in the library 'saed14rvt_tt0p8v25c' is not characterized for internal power. (PWR-536)
+Information: The library cell 'SAEDRVT14_TIE0_PV1ECO_1' in the library 'saed14rvt_tt0p8v25c' is not characterized for internal power. (PWR-536)
+Information: The library cell 'SAEDRVT14_TIE1_V1ECO_1' in the library 'saed14rvt_tt0p8v25c' is not characterized for internal power. (PWR-536)
+Information: The library cell 'SAEDRVT14_TIE1_V1_2' in the library 'saed14rvt_tt0p8v25c' is not characterized for internal power. (PWR-536)
+Information: The library cell 'SAEDRVT14_TIE1_4' in the library 'saed14rvt_tt0p8v25c' is not characterized for internal power. (PWR-536)
+Information: The library cell 'SAEDRVT14_TIE0_V1_2' in the library 'saed14rvt_tt0p8v25c' is not characterized for internal power. (PWR-536)
+Information: The library cell 'SAEDRVT14_TIE0_4' in the library 'saed14rvt_tt0p8v25c' is not characterized for internal power. (PWR-536)
+Information: The target library(s) contains cell(s), other than black boxes, that are not characterized for internal power. (PWR-24)
+
+  Beginning Mapping Optimizations  (Ultra High effort)
+  -------------------------------
+Information: There is no timing violation in design alu32. Delay-based auto_ungroup will not be performed. (OPT-780)
+
+                                  TOTAL                                                
+   ELAPSED            WORST NEG   SETUP    DESIGN                              LEAKAGE 
+    TIME      AREA      SLACK     COST    RULE COST         ENDPOINT            POWER  
+  --------- --------- --------- --------- --------- ------------------------- ---------
+    0:00:21     331.9      0.00       0.0      37.4                           95090.8203
+    0:00:21     330.4      0.00       0.0      37.4                           94588.3594
+
+  Beginning Constant Register Removal
+  -----------------------------------
+    0:00:21     383.6      0.00       0.0      37.4                           167678.3281
+    0:00:21     383.6      0.00       0.0      37.4                           167678.3281
+
+  Beginning Global Optimizations
+  ------------------------------
+  Numerical Synthesis (Phase 1)
+  Numerical Synthesis (Phase 2)
+  Global Optimization (Phase 1)
+  Global Optimization (Phase 2)
+  Global Optimization (Phase 3)
+  Global Optimization (Phase 4)
+  Global Optimization (Phase 5)
+  Global Optimization (Phase 6)
+  Global Optimization (Phase 7)
+  Global Optimization (Phase 8)
+  Global Optimization (Phase 9)
+  Global Optimization (Phase 10)
+  Global Optimization (Phase 11)
+  Global Optimization (Phase 12)
+  Global Optimization (Phase 13)
+  Global Optimization (Phase 14)
+  Global Optimization (Phase 15)
+  Global Optimization (Phase 16)
+  Global Optimization (Phase 17)
+  Global Optimization (Phase 18)
+  Global Optimization (Phase 19)
+  Global Optimization (Phase 20)
+  Global Optimization (Phase 21)
+  Global Optimization (Phase 22)
+  Global Optimization (Phase 23)
+  Global Optimization (Phase 24)
+  Global Optimization (Phase 25)
+  Global Optimization (Phase 26)
+  Global Optimization (Phase 27)
+  Global Optimization (Phase 28)
+  Global Optimization (Phase 29)
+  Global Optimization (Phase 30)
+
+  Beginning Isolate Ports
+  -----------------------
+
+  Beginning Delay Optimization
+  ----------------------------
+    0:00:22     331.6      0.00       0.0      37.4                           99988.6094
+    0:00:22     331.6      0.00       0.0      37.4                           99988.6094
+    0:00:22     331.6      0.00       0.0      37.4                           99988.6094
+    0:00:22     331.6      0.00       0.0      37.4                           99988.6094
+    0:00:22     331.6      0.00       0.0      37.4                           99988.6094
+    0:00:22     331.6      0.00       0.0      37.4                           99988.6094
+
+  Beginning WLM Backend Optimization
+  --------------------------------------
+    0:00:23     330.7      0.00       0.0      37.4                           99783.9141
+    0:00:23     330.7      0.00       0.0      37.4                           99783.9141
+    0:00:23     330.7      0.00       0.0      37.4                           99783.9141
+    0:00:23     330.7      0.00       0.0      37.4                           99783.9141
+    0:00:23     330.7      0.00       0.0      37.4                           99783.9141
+    0:00:23     330.7      0.00       0.0      37.4                           99783.9141
+    0:00:23     330.7      0.00       0.0      37.4                           99783.9141
+    0:00:23     330.7      0.00       0.0      37.4                           99783.9141
+    0:00:23     330.7      0.00       0.0      37.4                           99783.9141
+    0:00:23     330.7      0.00       0.0      37.4                           99783.9141
+    0:00:23     330.7      0.00       0.0      37.4                           99783.9141
+    0:00:23     330.7      0.00       0.0      37.4                           99783.9141
+    0:00:23     330.7      0.00       0.0      37.4                           99783.9141
+    0:00:23     330.7      0.00       0.0      37.4                           99783.9141
+    0:00:23     330.7      0.00       0.0      37.4                           99783.9141
+    0:00:23     330.7      0.00       0.0      37.4                           99783.9141
+    0:00:23     330.7      0.00       0.0      37.4                           99783.9141
+    0:00:23     330.7      0.00       0.0      37.4                           99783.9141
+    0:00:23     330.7      0.00       0.0      37.4                           99783.9141
+    0:00:23     330.7      0.00       0.0      37.4                           99783.9141
+    0:00:23     330.7      0.00       0.0      37.4                           99783.9141
+    0:00:23     330.7      0.00       0.0      37.4                           99783.9141
+    0:00:23     330.7      0.00       0.0      37.4                           99783.9141
+    0:00:23     330.7      0.00       0.0      37.4                           99783.9141
+
+
+  Beginning Design Rule Fixing  (min_capacitance)
+  ----------------------------
+
+                                  TOTAL                                                
+   ELAPSED            WORST NEG   SETUP    DESIGN                              LEAKAGE 
+    TIME      AREA      SLACK     COST    RULE COST         ENDPOINT            POWER  
+  --------- --------- --------- --------- --------- ------------------------- ---------
+    0:00:23     330.7      0.00       0.0      37.4                           99783.9141
+  Global Optimization (Phase 31)
+  Global Optimization (Phase 32)
+  Global Optimization (Phase 33)
+    0:00:23     330.7      0.00       0.0      37.4                           99783.9141
+    0:00:23     330.7      0.00       0.0      37.4                           99783.9141
+    0:00:23     330.7      0.00       0.0      37.4                           99783.9141
+    0:00:23     330.7      0.00       0.0      37.4                           99783.9141
+    0:00:23     330.7      0.00       0.0      37.4                           99783.9141
+    0:00:23     330.8      0.00       0.0      37.4                           95395.3359
+    0:00:23     330.8      0.00       0.0      37.4                           95395.3359
+    0:00:23     330.8      0.00       0.0      37.4                           95395.3359
+    0:00:23     330.8      0.00       0.0      37.4                           95395.3359
+    0:00:23     330.8      0.00       0.0      37.4                           95395.3359
+    0:00:23     330.8      0.00       0.0      37.4                           95395.3359
+    0:00:23     330.8      0.00       0.0      37.4                           95395.3359
+    0:00:23     330.8      0.00       0.0      37.4                           95395.3359
+    0:00:23     330.8      0.00       0.0      37.4                           95395.3359
+    0:00:23     330.8      0.00       0.0      37.4                           95395.3359
+    0:00:23     330.8      0.00       0.0      37.4                           95395.3359
+    0:00:23     330.8      0.00       0.0      37.4                           95395.3359
+    0:00:23     330.8      0.00       0.0      37.4                           95395.3359
+    0:00:23     330.8      0.00       0.0      37.4                           95395.3359
+    0:00:23     330.8      0.00       0.0      37.4                           95395.3359
+    0:00:23     330.8      0.00       0.0      37.4                           95395.3359
+    0:00:23     330.8      0.00       0.0      37.4                           95395.3359
+    0:00:23     330.8      0.00       0.0      37.4                           95395.3359
+    0:00:23     330.8      0.00       0.0      37.4                           95395.3359
+
+                                  TOTAL                                                
+   ELAPSED            WORST NEG   SETUP    DESIGN                              LEAKAGE 
+    TIME      AREA      SLACK     COST    RULE COST         ENDPOINT            POWER  
+  --------- --------- --------- --------- --------- ------------------------- ---------
+    0:00:23     330.8      0.00       0.0      37.4                           95395.3359
+    0:00:24     984.1      0.00       0.0      37.4                           666657.1250
+    0:00:24     984.1      0.00       0.0      37.4                           666657.1250
+    0:00:24     984.1      0.00       0.0      37.4                           666657.1250
+    0:00:24     452.9      0.00       0.0      37.4                           217132.0312
+    0:00:24     409.2      0.00       0.0      37.4                           172646.6719
+    0:00:24     409.2      0.00       0.0      37.4                           172646.6719
+    0:00:24     409.2      0.00       0.0      37.4                           172646.6719
+    0:00:24     409.2      0.00       0.0      37.4                           172646.6719
+    0:00:24     409.2      0.00       0.0      37.4                           172646.6719
+    0:00:24     409.2      0.00       0.0      37.4                           172646.6719
+    0:00:24     339.1      0.00       0.0      37.4                           104922.7812
+Loading db file '/umbc/software/design_kits/SAED14nm/lib/stdcell_rvt/db_ccs/saed14rvt_tt0p8v25c.db'
+Loading db file '/umbc/software/design_kits/SAED14nm/lib/stdcell_rvt/db_ccs/saed14rvt_ss0p72v125c.db'
+Loading db file '/umbc/software/design_kits/SAED14nm/lib/stdcell_rvt/db_ccs/saed14rvt_ss0p6v125c.db'
+
+
+Note: Symbol # after min delay cost means estimated hold TNS across all active scenarios 
+
+
+  Optimization Complete
+  ---------------------
+  Loading target library 'saed14rvt_ss0p72v125c'
+  Loading target library 'saed14rvt_ss0p6v125c'
+Information: State dependent leakage is now switched from off to on.
+Information: Propagating switching activity (low effort zero delay simulation). (PWR-6)
+Warning: There is no defined clock in the design. (PWR-80)
+Information: Total number of MV cells in the design.
+----------------------------------------------------------------------------------------------------
+ MV Cells                                           Total Number                                   
+----------------------------------------------------------------------------------------------------
+ Level Shifter:                                     0                                             
+ Enable Level Shifter:                              0                                             
+ Isolation Cell:                                    0                                             
+ Retention Cell:                                    0                                             
+ Retention Clamp Cell:                              0                                             
+ Switch Cell:                                       0                                             
+ Always-On Cell:                                    0                                             
+ Repeater Cell:                                     0                                             
+
+----------------------------------------------------------------------------------------------------
+Unmapped MV Cells 
+----------------------------------------------------------------------------------------------------
+0 Isolation Cells are unmapped 
+0 Retention Clamp Cells are unmapped 
+----------------------------------------------------------------------------------------------------
+Warning: In the design alu32, net 'result[31]' is connecting multiple ports. (UCN-1)
+Writing verilog file '/afs/umbc.edu/users/j/k/jkielty1/home/cmpe-641/lab/asic/alu32_icc.v'.
+Warning: Verilog 'assign' or 'tran' statements are written out. (VO-4)
+Information: Annotated 'cell' delays are assumed to include load delay. (UID-282)
+Information: Writing timing information to file '/afs/umbc.edu/users/j/k/jkielty1/home/cmpe-641/lab/asic/alu32.sdf'. (WT-3)
+Information: Updating design information... (UID-85)
+
+==================== FINAL DC METRICS ====================
+Core area:                          N/A: DC is pre-floorplan
+Total area:                         N/A
+Dynamic power:                      40.2797 uW
+Leakage power:                      110.9580 nW
+Total power:                        40.3907 uW
+Clock skew:                         N/A: CTS is done in ICC2, not DC
+Max VDD voltage drop:               N/A: no routed PG rail in DC
+Reports: /afs/umbc.edu/users/j/k/jkielty1/home/cmpe-641/lab/asic/reports
+==========================================================
+
+Memory usage for this session 1739 Mbytes.
+Memory usage for this session including child processes 2163 Mbytes.
+CPU usage for this session 330 seconds ( 0.09 hours ).
+Elapsed time for this session 339 seconds ( 0.09 hours ).
+
+Thank you...
+
