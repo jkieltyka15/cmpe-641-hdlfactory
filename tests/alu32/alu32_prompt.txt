@@ -1,0 +1,143 @@
+Generate a synthesizable Verilog-2001 module named alu32.
+
+Return only the Verilog code. Do not include markdown, explanation, comments, or a testbench.
+
+Critical file-format requirement:
+- The first character of the first line must be the Verilog backtick character `.
+- The first line of the file must be exactly:
+
+`timescale 1ns/1ps
+
+- Do not write timescale without the backtick.
+- The module declaration must start after the timescale directive.
+- Do not put anything before the timescale directive.
+- Do not omit the backtick character before timescale.
+- Use a Verilog backtick `, not an apostrophe '.
+
+Use exactly this module declaration:
+
+module alu32 (
+    input  wire [31:0] a,
+    input  wire [31:0] b,
+    input  wire [3:0]  op,
+    output wire [31:0] result,
+    output wire        zero,
+    output wire        carry,
+    output wire        overflow,
+    output wire        negative
+);
+
+Required behavior:
+- op 4'b0000: result = a + b
+- op 4'b0001: result = a - b
+- op 4'b0010: result = a & b
+- op 4'b0011: result = a | b
+- op 4'b0100: result = a ^ b
+- op 4'b0101: result = ~(a | b)
+- op 4'b0110: result = a << b[4:0]
+- op 4'b0111: result = a >> b[4:0]
+- op 4'b1000: result = $signed(a) >>> b[4:0]
+- op 4'b1001: result = 32'h00000001 if signed a < signed b, else 32'h00000000
+- op 4'b1010: result = 32'h00000001 if unsigned a < unsigned b, else 32'h00000000
+- all other op values: result = 32'h00000000
+
+Implementation rules:
+- Use plain Verilog-2001 only.
+- Use only wire declarations and continuous assign statements.
+- Do not use always blocks.
+- Do not use case statements.
+- Do not use case expressions.
+- Do not write “assign result = case”.
+- Do not use initial blocks.
+- Do not use procedural assignments.
+- Do not declare any signal as reg.
+- Do not use SystemVerilog-only syntax.
+- Do not use a clock or reset.
+- Do not include comments.
+
+Required internal wires:
+wire [32:0] add_result;
+wire [32:0] sub_result;
+wire [31:0] add_out;
+wire [31:0] sub_out;
+wire [31:0] and_out;
+wire [31:0] or_out;
+wire [31:0] xor_out;
+wire [31:0] nor_out;
+wire [31:0] sll_out;
+wire [31:0] srl_out;
+wire [31:0] sra_out;
+wire [31:0] slt_out;
+wire [31:0] sltu_out;
+
+Use exactly these arithmetic assignments:
+
+assign add_result = {1'b0, a} + {1'b0, b};
+assign sub_result = {1'b0, a} + {1'b0, ~b} + 33'b1;
+
+Use exactly these operation assignments:
+
+assign add_out  = add_result[31:0];
+assign sub_out  = sub_result[31:0];
+assign and_out  = a & b;
+assign or_out   = a | b;
+assign xor_out  = a ^ b;
+assign nor_out  = ~(a | b);
+assign sll_out  = a << b[4:0];
+assign srl_out  = a >> b[4:0];
+assign sra_out  = $signed(a) >>> b[4:0];
+assign slt_out  = ($signed(a) < $signed(b)) ? 32'h00000001 : 32'h00000000;
+assign sltu_out = (a < b) ? 32'h00000001 : 32'h00000000;
+
+Use exactly this continuous assignment for result:
+
+assign result = (op == 4'b0000) ? add_out  :
+                (op == 4'b0001) ? sub_out  :
+                (op == 4'b0010) ? and_out  :
+                (op == 4'b0011) ? or_out   :
+                (op == 4'b0100) ? xor_out  :
+                (op == 4'b0101) ? nor_out  :
+                (op == 4'b0110) ? sll_out  :
+                (op == 4'b0111) ? srl_out  :
+                (op == 4'b1000) ? sra_out  :
+                (op == 4'b1001) ? slt_out  :
+                (op == 4'b1010) ? sltu_out :
+                                  32'h00000000;
+
+Use exactly these continuous assignments for zero and negative:
+
+assign zero = (result == 32'h00000000);
+assign negative = result[31];
+
+Use exactly this continuous assignment for carry:
+
+assign carry = (op == 4'b0000) ? add_result[32] :
+               (op == 4'b0001) ? sub_result[32] :
+                                 1'b0;
+
+Use exactly this continuous assignment for overflow:
+
+assign overflow = (op == 4'b0000) ? ((a[31] == b[31]) && (result[31] != a[31])) :
+                  (op == 4'b0001) ? ((a[31] != b[31]) && (result[31] != a[31])) :
+                                    1'b0;
+
+Important correctness restrictions:
+- Do not use any non-ASCII characters.
+- Do not reference a[32], b[32], or result[32].
+- Do not assign a 33-bit value directly to result.
+- Do not use the same expression for signed and unsigned less-than.
+- Signed less-than must use $signed(a) and $signed(b).
+- Unsigned less-than must use a < b.
+- Arithmetic right shift must use $signed(a) >>> b[4:0].
+
+Final verification:
+1. The first line is exactly `timescale 1ns/1ps, including the backtick.
+2. No case statements appear anywhere.
+3. No always blocks appear anywhere.
+4. No reg declarations appear anywhere.
+5. result is assigned using the exact nested ternary assignment above.
+6. carry is assigned using the exact nested ternary assignment above.
+7. overflow is assigned using the exact nested ternary assignment above.
+8. The final line is exactly:
+
+endmodule
