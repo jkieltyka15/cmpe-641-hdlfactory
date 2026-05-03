@@ -1,0 +1,83 @@
+Generate a synthesizable Verilog-2001 module named counter8.
+
+Return only the Verilog code. Do not include markdown, explanation, comments, or a testbench.
+
+Critical file-format requirement:
+- The first character of the first line must be the Verilog backtick character `.
+- The first line of the file must be exactly:
+
+`timescale 1ns/1ps
+
+- Do not write timescale without the backtick.
+- The module declaration must start after the timescale directive.
+- Do not put anything before the timescale directive.
+- Do not omit the backtick character before timescale.
+- Use a Verilog backtick `, not an apostrophe '.
+
+Use exactly this module declaration:
+
+module counter8 (
+    input  wire       clk,
+    input  wire       rst_n,
+    input  wire       en,
+    input  wire       load,
+    input  wire [7:0] load_value,
+    output reg  [7:0] count
+);
+
+Port descriptions:
+- clk is the clock input. The counter updates on the rising edge of clk.
+- rst_n is an active-low asynchronous reset input. When rst_n is 0, count must immediately become 8'h00, independent of clk.
+- en is a 1-bit enable input. When en is 1 and load is 0, the counter increments on the rising edge of clk.
+- load is a 1-bit load control input. When load is 1, load_value is loaded into count on the rising edge of clk.
+- load_value is an 8-bit input value loaded into count when load is 1.
+- count is the 8-bit counter output register.
+
+Required behavior:
+- When rst_n is 0, count must immediately become 8'h00.
+- On each rising edge of clk, if rst_n is 1:
+  - If load is 1, count must become load_value.
+  - Else if en is 1, count must become count + 8'h01.
+  - Else count must hold its previous value.
+- Reset has the highest priority.
+- Load has priority over enable.
+- The counter must naturally wrap from 8'hFF to 8'h00 when incremented.
+
+Implementation rules:
+- Use plain Verilog-2001 only.
+- Use one sequential always block.
+- The always block sensitivity list must include posedge clk and negedge rst_n.
+- Use nonblocking assignments inside the sequential always block.
+- Do not use blocking assignments inside the sequential always block.
+- Do not use SystemVerilog-only syntax.
+- Do not include combinational always blocks.
+- Do not use initial blocks.
+- Do not use continuous assignments to count.
+- Do not declare count as wire.
+- Do not use clock gating.
+- Do not create any derived clocks.
+
+Restrictions:
+- Do not change the module name.
+- Do not change any port name.
+- Do not change any port width.
+- Do not change any port direction.
+- Do not include simulation-only code.
+- Do not include $display, $finish, delays, or a testbench.
+- Do not include any extra modules.
+
+Before returning the final code, verify:
+1. The first line is exactly `timescale 1ns/1ps, including the backtick.
+2. The second nonblank line begins with module counter8.
+3. The module declaration exactly matches the requested signature.
+4. The always block uses @(posedge clk or negedge rst_n).
+5. rst_n is active-low and asynchronous.
+6. count is assigned 8'h00 when rst_n is 0.
+7. load has priority over en.
+8. en increments count only when load is 0.
+9. count holds its value when load is 0 and en is 0.
+10. All assignments to count inside the always block use <=.
+11. The module has no testbench code.
+12. The final line is exactly:
+
+endmodule
