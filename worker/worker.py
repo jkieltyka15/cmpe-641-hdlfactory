@@ -14,11 +14,16 @@ import shutil
 
 import redis
 import requests
+import time
 
 OLLAMA_URL = "http://ollama:11434/api/generate"
 OLLAMA_PS_URL = "http://ollama:11434/api/ps"
 # Switched to Ministral-3 (3B)
 MODEL = "ministral-3:3b"
+# Client-side Ollama call configuration
+OLLAMA_TIMEOUT = 600  # seconds per request (10 minutes)
+OLLAMA_RETRIES = 3
+OLLAMA_BACKOFF_FACTOR = 2
 
 # Worker runs inside /app and shares mounted job/data folders with backend.
 BASE_DIR = Path("/app")
@@ -56,6 +61,35 @@ def clean_verilog(text: str) -> str:
         # Prefer the first complete module block over extra prose.
         return match.group(1).strip()
     return text
+
+
+def ollama_post(payload: dict, timeout: int | None = None, retries: int | None = None, backoff: int | None = None) -> dict:
+    """Post to the Ollama generate endpoint with retries and exponential backoff.
+
+    Returns the parsed JSON response on success or raises the last exception on failure.
+    """
+    if timeout is None:
+        timeout = OLLAMA_TIMEOUT
+    if retries is None:
+        retries = OLLAMA_RETRIES
+    if backoff is None:
+        backoff = OLLAMA_BACKOFF_FACTOR
+
+    last_exc = None
+    for attempt in range(1, retries + 1):
+        try:
+            resp = requests.post(OLLAMA_URL, json=payload, timeout=timeout)
+            resp.raise_for_status()
+            return resp.json()
+        except requests.exceptions.RequestException as e:
+            last_exc = e
+            if attempt == retries:
+                # Exhausted retries; re-raise for caller handling
+                raise
+            sleep_for = backoff * (2 ** (attempt - 1))
+            print(f"OLLAMA POST failed (attempt {attempt}/{retries}): {e}; retrying in {sleep_for}s")
+            time.sleep(sleep_for)
+
 
 
 def get_testbench_info(job_dir: Path) -> tuple[str, str]:
@@ -151,11 +185,9 @@ Rules:
         "stream": False,
     }
 
-    # Long timeout accounts for first-token latency on large model runs.
-    response = requests.post(OLLAMA_URL, json=payload, timeout=300)
-    response.raise_for_status()
-    data = response.json()
-    return clean_verilog(data["response"])
+    # Use robust POST with retries and an increased timeout for large runs.
+    data = ollama_post(payload)
+    return clean_verilog(data.get("response", ""))
 
 
 def test_passed(stdout: str, stderr: str = "") -> bool:
@@ -415,9 +447,7 @@ Input Verilog:
                 "stream": False,
             }
 
-            resp = requests.post(OLLAMA_URL, json=payload, timeout=300)
-            resp.raise_for_status()
-            data = resp.json()
+            data = ollama_post(payload)
             optimized_text = clean_verilog(data.get("response", ""))
 
             codestral_stdout.write_text(data.get("response", ""), encoding="utf-8")

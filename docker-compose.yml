@@ -17,6 +17,8 @@ services:
       - /dev/dri:/dev/dri
     environment:
       - OLLAMA_VULKAN=1
+      - OLLAMA_LOAD_TIMEOUT=10m0s
+      - OLLAMA_KEEP_ALIVE=10m0s
     healthcheck:
       test: ["CMD", "ollama", "list"]
       interval: 10s
