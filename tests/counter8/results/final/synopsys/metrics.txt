@@ -1,0 +1,19 @@
+==================== FINAL DC METRICS ====================
+Core area:                          N/A: DC is pre-floorplan
+Total area:                         N/A
+Dynamic power:                      11.7251 uW
+Leakage power:                      7.7450 nW
+Total power:                        11.7328 uW
+Clock skew:                         N/A: CTS is done in ICC2, not DC
+Max VDD voltage drop:               N/A: no routed PG rail in DC
+==========================================================
+
+=================== FINAL ICC2 METRICS ===================
+Core area:                          32.9448
+Total area of cells:                19.7136
+Dynamic power:                      1.0982e+07 pW
+Leakage power:                      5.8731e+03 pW
+Total power:                        10.9879 uW
+Clock skew:                         0.00
+Max VDD voltage drop:               N/A
+==========================================================
