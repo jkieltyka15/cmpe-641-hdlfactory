@@ -263,7 +263,123 @@ hdlfactory/
 │
 └── codestral/                     # (Optimization via Ollama model)
     └── Dockerfile                 # (Optional; not directly used)
+
+└── tests/                         # Testing and synthesis flows
+    ├── unified_synopsys_flow.tcl   # DC/ICC2 synthesis script
+    ├── adder32/                    # Example designs for testing
+    ├── alu32/
+    ├── counter8/
+    ├── decoder3x8/
+    └── mux4x16/
 ```
+
+## Running Synopsys Synthesis Flows
+
+The `tests/unified_synopsys_flow.tcl` script automates Design Compiler (DC) and ICC2 synthesis flows for SAED 14nm technology. It can process generated Verilog designs or testbench-compatible HDL.
+
+### Prerequisites
+
+- **UMBC Synopsys License & Tools** (DC and ICC2 installed and licensed)
+- **SAED 14nm Design Kit** (design_kits/SAED14nm, standard on UMBC servers)
+- **Generated Verilog** (from HDLFACTORY or manual design)
+- **Access to UMBC launch scripts** (`launch_synopsys_dc.sh`, `launch_synopsys_icc2_shell.sh`)
+
+### Running Design Compiler (DC)
+
+DC performs synthesis, optimization, and place & route preparation. Typical runtime: 2–10 minutes depending on design complexity.
+
+**Command:**
+```bash
+env FLOW=dc RTL_FILE=verilog/adder32_draft.v TOP=adder32 CLK_PORT=clk CLK_PER=1.0 \
+  /umbc/software/scripts/launch_synopsys_dc.sh \
+    -f tests/unified_synopsys_flow.tcl -o dc_out.log
+```
+
+**Environment Variables:**
+- `FLOW=dc` – Select Design Compiler flow
+- `RTL_FILE` – Path to Verilog file (relative or absolute)
+- `TOP` – Top-level module name (defaults to filename stem if omitted)
+- `CLK_PORT` – Clock port name (default: `clk`)
+- `CLK_PER` – Clock period in nanoseconds (default: `1.0`)
+
+**Output Files (in `asic/reports/`):**
+- `dc_area.rpt` – Area breakdown and utilization
+- `dc_power.rpt` – Dynamic and leakage power estimates
+- `dc.ddc` – Compiled design database (binary format)
+- `dc_final.v` – Gate-level Verilog netlist
+
+**Output Directories:**
+- `asic/work/` – DC working files and intermediate databases
+- `gate/` – Gate-level netlists and SDF timing files
+
+### Running ICC2 (Place & Route)
+
+ICC2 performs floorplanning, placement, routing, and final timing verification. Run this **after DC completes successfully**. Typical runtime: 5–30 minutes depending on size.
+
+**Command:**
+```bash
+env FLOW=icc2 RTL_FILE=verilog/adder32_draft.v TOP=adder32 CLK_PORT=clk CLK_PER=1.0 \
+  /umbc/software/scripts/launch_synopsys_icc2_shell.sh \
+    -f tests/unified_synopsys_flow.tcl -o icc2_out.log
+```
+
+**Output Files (in `asic/reports/`):**
+- `icc2_area.rpt` – Final placed & routed area utilization
+- `icc2_power.rpt` – Post-route power analysis
+- `icc2_timing.rpt` – Setup/hold timing closure status
+- `icc2_wns.rpt` – Worst negative slack (if any timing violations)
+- `icc2_routing.rpt` – Congestion and route utilization metrics
+
+**Output GDS & Netlists:**
+- `asic/work/` – ICC2 library, macro placements, routing database
+- `gate/icc2_final.gds` – Final GDS2 layout (if GDS export enabled)
+- `gate/icc2_final.v` – Final routed netlist
+
+### Example Workflow
+
+```bash
+# 1. Generate a design with HDLFACTORY, download to verilog/adder32_draft.v
+cd /home/student/hdlfactory-run
+
+# 2. Run DC synthesis
+env FLOW=dc RTL_FILE=verilog/adder32_draft.v TOP=adder32 CLK_PORT=clk CLK_PER=1.0 \
+  /umbc/software/scripts/launch_synopsys_dc.sh \
+    -f tests/unified_synopsys_flow.tcl -o dc.log
+
+# 3. Check DC completed successfully
+grep -i "error\|warning" dc.log | head -20
+tail -50 dc.log | grep -i "total area\|power"
+
+# 4. Run ICC2 (place & route)
+env FLOW=icc2 RTL_FILE=verilog/adder32_draft.v TOP=adder32 CLK_PORT=clk CLK_PER=1.0 \
+  /umbc/software/scripts/launch_synopsys_icc2_shell.sh \
+    -f tests/unified_synopsys_flow.tcl -o icc2.log
+
+# 5. Review final metrics
+tail -100 icc2.log | grep -A 20 "FINAL ICC2 METRICS"
+cat asic/reports/icc2_area.rpt
+cat asic/reports/icc2_power.rpt
+```
+
+### Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| "RTL_FILE not specified" | Pass `-rtl ./path/to/file.v` or set `RTL_FILE=` environment variable before running |
+| "TOP module not found" | Ensure `TOP=` matches the module name inside the Verilog file, or set `TOP=` explicitly |
+| DC/ICC2 license errors | Verify UMBC license server is accessible; check `flexlmdiag` on UMBC systems |
+| Clock period too tight | Increase `CLK_PER` value (e.g., `CLK_PER=2.0` for slower timing closure) |
+| Memory/timeout errors | Very large designs may exceed allocated resources; break into smaller modules or use incremental compilation |
+| Reports missing | Check `dc_out.log` or `icc2_out.log` for Tcl errors; verify `asic/reports/` directory was created |
+
+### Advanced Options
+
+The script reads configuration from environment variables, command-line arguments (`-rtl`, `-top`, `-clk`, `-period`), or defaults. Customization points:
+
+- **Technology node**: Edit `DESIGN_REF_PATH` in the script to use a different design kit
+- **Library selection**: Modify `TARGET_LIBRARY_FILES` (currently: SAED 14nm RVT)
+- **Power supply nets**: Adjust `NDM_POWER_NET`, `NDM_POWER_PORT`, `NDM_GROUND_NET`, `NDM_GROUND_PORT` for custom power/ground naming
+- **Routing layers**: Change `MIN_ROUTING_LAYER` and `MAX_ROUTING_LAYER` to constrain routing to specific metal layers
 
 ## Worker Pipeline Stages
 
