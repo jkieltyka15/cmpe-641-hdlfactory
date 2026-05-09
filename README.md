@@ -4,6 +4,8 @@
 
 HDLFACTORY is an end-to-end system for generating synthesizable Verilog hardware designs from natural language specifications, automatically optimizing them for physical size and power, and validating them against user-provided testbenches. It leverages large language models (Ministral-3 (3B) for generation, Codestral-22B for optimization) and industry-standard tools (Verilator, Icarus Verilog) to produce production-ready RTL artifacts.
 
+Development of this project was assisted by AI tools for implementation and documentation support.
+
 ## Architecture Overview
 
 ```
