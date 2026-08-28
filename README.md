@@ -6,6 +6,14 @@ HDLFACTORY is an end-to-end system for generating synthesizable Verilog hardware
 
 Development of this project was assisted by AI tools for implementation and documentation support.
 
+## Paper Release
+
+This repository contains the `v1.0.0` release associated with the paper
+"HDLFACTORY: A Lightweight Open-Source Multi-Agent Framework for Verilog
+Generation, Optimization, and Validation Using Large Language Models." See
+[`CHANGELOG.md`](CHANGELOG.md) for the release contents and [`CITATION.cff`](CITATION.cff)
+for the citation metadata.
+
 ## Architecture Overview
 
 ```

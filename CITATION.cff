@@ -1,0 +1,15 @@
+cff-version: 1.2.0
+message: "If you use HDLFACTORY, please cite this work."
+title: "HDLFACTORY: A Lightweight Open-Source Multi-Agent Framework for Verilog Generation, Optimization, and Validation Using Large Language Models"
+version: 1.0.0
+date-released: 2026-08-28
+abstract: >-
+  HDLFACTORY is an end-to-end framework for generating synthesizable Verilog
+  from natural-language specifications, optimizing designs for area and power,
+  and validating them with Verilator and Icarus Verilog.
+authors:
+  - family-names: Kieltyka
+    given-names: Jordan
+    email: jkielty1@umbc.edu
+    affiliation: University of Maryland, Baltimore County
+repository-code: "https://github.com/jkieltyka15/cmpe-641-hdlfactory"
